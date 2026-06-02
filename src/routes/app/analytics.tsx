@@ -1,75 +1,419 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { PageHeader } from "@/components/AppShell";
-import { useStore, tr } from "@/lib/store";
 import { Card } from "@/components/ui/card";
-import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, BarChart, Bar, Tooltip } from "recharts";
+import {
+  Bar,
+  BarChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { supabase } from "@/lib/supabase";
+import {
+  fetchOwnerContext,
+  money,
+  type RestaurantRow,
+} from "@/lib/masaqr";
 
 export const Route = createFileRoute("/app/analytics")({
-  head: () => ({ meta: [{ title: "Analytics — MasaQR" }] }),
+  head: () => ({
+    meta: [{ title: "Analytics — MasaQR" }],
+  }),
   component: AnalyticsPage,
 });
 
+type OrderRow = {
+  id: string;
+  total: number;
+  status: string;
+  created_at: string;
+};
+
+type OrderItemRow = {
+  quantity: number;
+  total_price: number;
+  menu_item?: { name?: string } | { name?: string }[] | null;
+};
+
+type CategoryItemRow = {
+  category_id: string;
+  category?: { name?: string } | { name?: string }[] | null;
+};
+
+type WaiterRequestRow = {
+  type: string;
+  status: string;
+};
+
+type AnalyticsState = {
+  totalOrders: number;
+  revenue: number;
+  averageOrder: number;
+  menuViews: number;
+  cancelledOrders: number;
+  activeWaiterRequests: number;
+  topItems: { name: string; sold: number; revenue: number }[];
+  categoryPerformance: { name: string; items: number }[];
+  ordersByStatus: { name: string; count: number }[];
+  waiterRequests: { name: string; count: number }[];
+};
+
 function AnalyticsPage() {
-  const { orders, items, scans, tables, categories } = useStore();
-  const ordersByHour = Array.from({ length: 12 }).map((_, i) => ({
-    h: `${10 + i}:00`,
-    orders: Math.round(5 + Math.sin(i / 2) * 4 + Math.random() * 3),
-  }));
-  const topItems = items.slice(0, 6).map(i => ({ name: tr(i.name, "en").slice(0, 14), sold: Math.round(20 + Math.random() * 80) }))
-    .sort((a, b) => b.sold - a.sold);
-  const categoryPerf = categories.map(c => ({
-    name: tr(c.name, "en").slice(0, 12),
-    sold: items.filter(i => i.categoryId === c.id).reduce((s) => s + Math.round(20 + Math.random() * 60), 0),
-  }));
+  const [restaurant, setRestaurant] = useState<RestaurantRow | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [analytics, setAnalytics] = useState<AnalyticsState>({
+    totalOrders: 0,
+    revenue: 0,
+    averageOrder: 0,
+    menuViews: 0,
+    cancelledOrders: 0,
+    activeWaiterRequests: 0,
+    topItems: [],
+    categoryPerformance: [],
+    ordersByStatus: [],
+    waiterRequests: [],
+  });
+
+  async function loadAnalytics() {
+    try {
+      const ctx = await fetchOwnerContext();
+      setRestaurant(ctx.restaurant);
+
+      if (!ctx.profile?.restaurant_id) {
+        setAnalytics({
+          totalOrders: 0,
+          revenue: 0,
+          averageOrder: 0,
+          menuViews: 0,
+          cancelledOrders: 0,
+          activeWaiterRequests: 0,
+          topItems: [],
+          categoryPerformance: [],
+          ordersByStatus: [],
+          waiterRequests: [],
+        });
+        return;
+      }
+
+      const restaurantId = ctx.profile.restaurant_id;
+
+      const [
+        ordersResult,
+        itemsResult,
+        categoryItemsResult,
+        viewsResult,
+        waiterRequestsResult,
+      ] = await Promise.all([
+        supabase
+          .from("masaqr_orders")
+          .select("id,total,status,created_at")
+          .eq("restaurant_id", restaurantId),
+
+        supabase
+          .from("masaqr_order_items")
+          .select("quantity,total_price,menu_item:masaqr_menu_items(name)")
+          .in(
+            "order_id",
+            (
+              await supabase
+                .from("masaqr_orders")
+                .select("id")
+                .eq("restaurant_id", restaurantId)
+            ).data?.map((order) => order.id) ?? []
+          ),
+
+        supabase
+          .from("masaqr_menu_items")
+          .select("category_id,category:masaqr_categories(name)")
+          .eq("restaurant_id", restaurantId),
+
+        supabase
+          .from("masaqr_activity_logs")
+          .select("id", { count: "exact", head: true })
+          .eq("restaurant_id", restaurantId)
+          .in("event_type", ["menu_scan", "menu_view"]),
+
+        supabase
+          .from("masaqr_waiter_requests")
+          .select("type,status")
+          .eq("restaurant_id", restaurantId),
+      ]);
+
+      if (ordersResult.error) throw ordersResult.error;
+      if (itemsResult.error) throw itemsResult.error;
+      if (categoryItemsResult.error) throw categoryItemsResult.error;
+      if (viewsResult.error) throw viewsResult.error;
+      if (waiterRequestsResult.error) throw waiterRequestsResult.error;
+
+      const orders = (ordersResult.data ?? []) as OrderRow[];
+      const orderItems = (itemsResult.data ?? []) as OrderItemRow[];
+      const categoryItems = (categoryItemsResult.data ?? []) as CategoryItemRow[];
+      const waiterRequests = (waiterRequestsResult.data ?? []) as WaiterRequestRow[];
+
+      const nonCancelledOrders = orders.filter((order) => order.status !== "cancelled");
+      const revenue = nonCancelledOrders.reduce(
+        (sum, order) => sum + Number(order.total ?? 0),
+        0
+      );
+
+      const itemMap = new Map<string, { name: string; sold: number; revenue: number }>();
+
+      for (const item of orderItems) {
+        const menuItem = Array.isArray(item.menu_item) ? item.menu_item[0] : item.menu_item;
+const name = menuItem?.name ?? "Unknown item";
+        const current = itemMap.get(name) ?? { name, sold: 0, revenue: 0 };
+
+        current.sold += Number(item.quantity ?? 0);
+        current.revenue += Number(item.total_price ?? 0);
+
+        itemMap.set(name, current);
+      }
+
+      const categoryMap = new Map<string, number>();
+
+      for (const item of categoryItems) {
+        const category = Array.isArray(item.category) ? item.category[0] : item.category;
+const name = category?.name ?? "Uncategorized";
+        categoryMap.set(name, (categoryMap.get(name) ?? 0) + 1);
+      }
+
+      const statusMap = new Map<string, number>();
+
+      for (const order of orders) {
+        statusMap.set(order.status, (statusMap.get(order.status) ?? 0) + 1);
+      }
+
+      const waiterMap = new Map<string, number>();
+
+      for (const request of waiterRequests) {
+        waiterMap.set(request.type, (waiterMap.get(request.type) ?? 0) + 1);
+      }
+
+      setAnalytics({
+        totalOrders: orders.length,
+        revenue,
+        averageOrder:
+          nonCancelledOrders.length > 0 ? revenue / nonCancelledOrders.length : 0,
+        menuViews: viewsResult.count ?? 0,
+        cancelledOrders: orders.filter((order) => order.status === "cancelled").length,
+        activeWaiterRequests: waiterRequests.filter(
+          (request) => request.status === "open" || request.status === "accepted"
+        ).length,
+        topItems: Array.from(itemMap.values())
+          .sort((a, b) => b.sold - a.sold)
+          .slice(0, 6),
+        categoryPerformance: Array.from(categoryMap.entries()).map(([name, items]) => ({
+          name,
+          items,
+        })),
+        ordersByStatus: Array.from(statusMap.entries()).map(([name, count]) => ({
+          name: name.replace("_", " "),
+          count,
+        })),
+        waiterRequests: Array.from(waiterMap.entries()).map(([name, count]) => ({
+          name: name.replace("_", " "),
+          count,
+        })),
+      });
+    } catch (error: any) {
+      toast.error(error.message ?? "Could not load analytics");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadAnalytics();
+
+    const channel = supabase
+      .channel("analytics-live")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "masaqr_orders" },
+        () => loadAnalytics()
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "masaqr_order_items" },
+        () => loadAnalytics()
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "masaqr_waiter_requests" },
+        () => loadAnalytics()
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "masaqr_activity_logs" },
+        () => loadAnalytics()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const currency = restaurant?.currency ?? "AZN";
+
+  const statusChart = useMemo(
+    () =>
+      analytics.ordersByStatus.length > 0
+        ? analytics.ordersByStatus
+        : [{ name: "No orders", count: 0 }],
+    [analytics.ordersByStatus]
+  );
+
+  if (loading) {
+    return <div className="p-6 text-sm text-muted-foreground">Loading analytics…</div>;
+  }
 
   return (
-    <div className="p-6 md:p-10">
-      <PageHeader title="Analytics" subtitle="Operations, not revenue. Run a faster kitchen." />
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
-        {[
-          { l: "Orders today", v: orders.length, h: "+12% vs avg" },
-          { l: "QR scans (mo)", v: scans.toLocaleString(), h: `From ${tables.length} tables` },
-          { l: "Avg prep", v: "14m", h: "Goal: 15m" },
-          { l: "Waiter response", v: "1m 12s", h: "Excellent" },
-        ].map(s => (
-          <Card key={s.l} className="p-4"><div className="text-xs uppercase text-muted-foreground">{s.l}</div><div className="font-display text-2xl mt-1">{s.v}</div><div className="text-xs text-muted-foreground">{s.h}</div></Card>
-        ))}
+    <div>
+      <PageHeader
+        title="Analytics"
+        subtitle="Real analytics from Supabase orders, activity logs, and waiter requests."
+      />
+
+      <div className="grid gap-4 p-6 md:grid-cols-2 xl:grid-cols-4">
+        <Metric
+          label="Total orders"
+          value={analytics.totalOrders.toString()}
+          hint="All-time orders"
+        />
+        <Metric
+          label="Revenue"
+          value={money(analytics.revenue, currency)}
+          hint="Excludes cancelled orders"
+        />
+        <Metric
+          label="Average order"
+          value={money(analytics.averageOrder, currency)}
+          hint="Revenue / completed orders"
+        />
+        <Metric
+          label="Menu views"
+          value={analytics.menuViews.toString()}
+          hint="From activity logs"
+        />
       </div>
-      <div className="grid lg:grid-cols-2 gap-5">
-        <Card className="p-5"><div className="font-display text-lg mb-3">Orders by hour</div>
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={ordersByHour}><XAxis dataKey="h" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} /><Tooltip /><Line type="monotone" dataKey="orders" stroke="oklch(0.66 0.17 38)" strokeWidth={2} dot={false} /></LineChart>
-          </ResponsiveContainer>
-          <div className="text-xs text-muted-foreground mt-2">Peak: 19:00–21:00</div>
-        </Card>
-        <Card className="p-5"><div className="font-display text-lg mb-3">Top menu items</div>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={topItems}><XAxis dataKey="name" tick={{ fontSize: 10 }} /><YAxis tick={{ fontSize: 11 }} /><Tooltip /><Bar dataKey="sold" fill="oklch(0.66 0.17 38)" radius={[4, 4, 0, 0]} /></BarChart>
-          </ResponsiveContainer>
-        </Card>
-        <Card className="p-5"><div className="font-display text-lg mb-3">Category performance</div>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={categoryPerf}><XAxis dataKey="name" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} /><Tooltip /><Bar dataKey="sold" fill="oklch(0.7 0.13 160)" radius={[4, 4, 0, 0]} /></BarChart>
-          </ResponsiveContainer>
-        </Card>
-        <Card className="p-5"><div className="font-display text-lg mb-3">Waiter requests this week</div>
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <div className="p-3 rounded bg-ember/5"><div className="text-xs uppercase">Food ready</div><div className="font-display text-2xl">128</div></div>
-            <div className="p-3 rounded bg-muted"><div className="text-xs uppercase">Bill requested</div><div className="font-display text-2xl">94</div></div>
-            <div className="p-3 rounded bg-muted"><div className="text-xs uppercase">Help</div><div className="font-display text-2xl">31</div></div>
-            <div className="p-3 rounded bg-warning/10"><div className="text-xs uppercase">Long wait</div><div className="font-display text-2xl">6</div></div>
+
+      <div className="grid gap-6 px-6 pb-6 xl:grid-cols-2">
+        <Card className="p-5">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold">Orders by status</h2>
+            <p className="text-sm text-muted-foreground">
+              Real order status distribution.
+            </p>
+          </div>
+
+          <div className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={statusChart}>
+                <XAxis dataKey="name" />
+                <YAxis allowDecimals={false} />
+                <Tooltip />
+                <Bar dataKey="count" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </Card>
-        <Card className="p-5 lg:col-span-2"><div className="font-display text-lg mb-3">Operational signals</div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-            <Signal label="Late orders" value="3" hint="Over 25m threshold" tone="warn" />
-            <Signal label="Sold-out items" value={items.filter(i => i.soldOut).length.toString()} hint="Refresh stock in kitchen" />
-            <Signal label="Active tables" value={`${tables.filter(t => t.status !== "available").length}/${tables.length}`} hint="Branch occupancy" />
-            <Signal label="PDF exports" value="42" hint="This month" />
-            <Signal label="Avg staff response" value="1m 12s" hint="Across all alerts" />
-            <Signal label="Top station" value="Grill" hint="68% of orders" />
-            <Signal label="Branch with most orders" value="Downtown" hint="vs Seaside" />
-            <Signal label="Active staff on shift" value="3" hint="Right now" />
+
+        <Card className="p-5">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold">Top menu items</h2>
+            <p className="text-sm text-muted-foreground">
+              Based on real order items.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            {analytics.topItems.map((item) => (
+              <div
+                key={item.name}
+                className="flex items-center justify-between rounded-2xl border p-4"
+              >
+                <div>
+                  <p className="font-medium">{item.name}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {item.sold} sold
+                  </p>
+                </div>
+                <span className="font-medium">{money(item.revenue, currency)}</span>
+              </div>
+            ))}
+
+            {analytics.topItems.length === 0 ? (
+              <Empty text="No item sales yet." />
+            ) : null}
+          </div>
+        </Card>
+
+        <Card className="p-5">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold">Category coverage</h2>
+            <p className="text-sm text-muted-foreground">
+              Real menu items by category.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            {analytics.categoryPerformance.map((category) => (
+              <div
+                key={category.name}
+                className="flex items-center justify-between border-b pb-3 last:border-b-0"
+              >
+                <span>{category.name}</span>
+                <span className="text-sm text-muted-foreground">
+                  {category.items} item(s)
+                </span>
+              </div>
+            ))}
+
+            {analytics.categoryPerformance.length === 0 ? (
+              <Empty text="No categories or menu items yet." />
+            ) : null}
+          </div>
+        </Card>
+
+        <Card className="p-5">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold">Waiter requests</h2>
+            <p className="text-sm text-muted-foreground">
+              Real floor alerts from Supabase.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <Metric
+              label="Active requests"
+              value={analytics.activeWaiterRequests.toString()}
+              hint="Open or accepted"
+            />
+            <Metric
+              label="Cancelled orders"
+              value={analytics.cancelledOrders.toString()}
+              hint="Real cancelled order count"
+            />
+
+            {analytics.waiterRequests.map((request) => (
+              <div
+                key={request.name}
+                className="flex items-center justify-between border-b pb-3 last:border-b-0"
+              >
+                <span className="capitalize">{request.name}</span>
+                <span className="text-sm text-muted-foreground">
+                  {request.count}
+                </span>
+              </div>
+            ))}
+
+            {analytics.waiterRequests.length === 0 ? (
+              <Empty text="No waiter requests yet." />
+            ) : null}
           </div>
         </Card>
       </div>
@@ -77,12 +421,28 @@ function AnalyticsPage() {
   );
 }
 
-function Signal({ label, value, hint, tone }: { label: string; value: string; hint: string; tone?: "warn" }) {
+function Metric({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+}) {
   return (
-    <div className={`p-3 rounded-lg border ${tone === "warn" ? "bg-warning/5 border-warning/30" : "bg-card"}`}>
-      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
-      <div className="font-display text-xl mt-0.5">{value}</div>
-      <div className="text-xs text-muted-foreground">{hint}</div>
+    <Card className="p-5">
+      <p className="text-sm text-muted-foreground">{label}</p>
+      <div className="mt-2 text-3xl font-semibold">{value}</div>
+      <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
+    </Card>
+  );
+}
+
+function Empty({ text }: { text: string }) {
+  return (
+    <div className="rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+      {text}
     </div>
   );
 }
