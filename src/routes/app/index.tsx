@@ -237,9 +237,9 @@ function Dashboard() {
     return (
       <div>
         <PageHeader
-          title="Dashboard"
-          description="Complete restaurant setup to start using live statistics."
-        />
+  title="Dashboard"
+  subtitle="Complete restaurant setup to start using live statistics."
+/>
         <div className="p-6">
           <Card className="p-6">
             <h2 className="text-lg font-semibold">Restaurant setup required</h2>
@@ -258,9 +258,9 @@ function Dashboard() {
   return (
     <div>
       <PageHeader
-        title="Dashboard"
-        description={restaurant ? `${restaurant.name} live overview` : "Live overview"}
-        action={
+  title="Dashboard"
+  subtitle={restaurant ? `${restaurant.name} live overview` : "Live overview"}
+  actions={
           <div className="flex gap-2">
             <Button asChild variant="outline">
               <Link to="/kitchen">Open kitchen</Link>
