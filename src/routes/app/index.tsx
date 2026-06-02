@@ -2,28 +2,81 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { PageHeader } from "@/components/AppShell";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Activity, QrCode, BookOpen, FileText, ChefHat, Users, BellRing, ArrowUpRight, CheckCircle2, ShoppingBag } from "lucide-react";
+import {
+  Activity,
+  QrCode,
+  BookOpen,
+  FileText,
+  ChefHat,
+  Users,
+  BellRing,
+  ArrowUpRight,
+  CheckCircle2,
+  ShoppingBag,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
-import { fetchMenu, fetchOrders, fetchOwnerContext, money, minsAgoIso, shortOrder, type BranchRow, type MenuItemRow, type OrderBundle, type Profile, type RestaurantRow, type TableRow } from "@/lib/masaqr";
+import {
+  fetchOrders,
+  fetchOwnerContext,
+  money,
+  minsAgoIso,
+  shortOrder,
+  type OrderBundle,
+  type Profile,
+  type RestaurantRow,
+} from "@/lib/masaqr";
 
 export const Route = createFileRoute("/app/")({
-  head: () => ({ meta: [{ title: "Dashboard — MasaQR" }] }),
+  head: () => ({
+    meta: [{ title: "Dashboard — MasaQR" }],
+  }),
   component: Dashboard,
 });
 
-function Stat({ icon: Icon, label, value, hint, tone = "default" }: any) {
-  const tones: any = { default: "bg-card", accent: "bg-ember/5 border-ember/30", warn: "bg-warning/10 border-warning/40" };
+type DashboardStats = {
+  todayOrders: number;
+  todayRevenue: number;
+  activeOrders: number;
+  readyOrders: number;
+  servedOrders: number;
+  menuItems: number;
+  tables: number;
+  staff: number;
+  scans: number;
+};
+
+function Stat({
+  icon: Icon,
+  label,
+  value,
+  hint,
+  tone = "default",
+}: {
+  icon: any;
+  label: string;
+  value: string | number;
+  hint?: string;
+  tone?: "default" | "accent" | "warn";
+}) {
+  const tones = {
+    default: "bg-card",
+    accent: "bg-ember/5 border-ember/30",
+    warn: "bg-warning/10 border-warning/40",
+  };
+
   return (
-    <Card className={`p-5 border ${tones[tone]}`}>
-      <div className="flex items-start justify-between">
+    <Card className={`p-5 ${tones[tone]}`}>
+      <div className="flex items-center justify-between">
         <div>
-          <div className="text-xs text-muted-foreground uppercase tracking-wider">{label}</div>
-          <div className="font-display text-3xl mt-1">{value}</div>
-          {hint && <div className="text-xs text-muted-foreground mt-1">{hint}</div>}
+          <p className="text-sm text-muted-foreground">{label}</p>
+          <div className="mt-2 text-3xl font-semibold">{value}</div>
+          {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
         </div>
-        <Icon className="h-5 w-5 text-ember" />
+        <div className="rounded-2xl bg-muted p-3">
+          <Icon className="h-5 w-5" />
+        </div>
       </div>
     </Card>
   );
@@ -32,108 +85,314 @@ function Stat({ icon: Icon, label, value, hint, tone = "default" }: any) {
 function Dashboard() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [restaurant, setRestaurant] = useState<RestaurantRow | null>(null);
-  const [branches, setBranches] = useState<BranchRow[]>([]);
   const [orders, setOrders] = useState<OrderBundle[]>([]);
-  const [items, setItems] = useState<MenuItemRow[]>([]);
-  const [tables, setTables] = useState<TableRow[]>([]);
-  const [staffCount, setStaffCount] = useState(0);
-  const [scans, setScans] = useState(0);
+  const [stats, setStats] = useState<DashboardStats>({
+    todayOrders: 0,
+    todayRevenue: 0,
+    activeOrders: 0,
+    readyOrders: 0,
+    servedOrders: 0,
+    menuItems: 0,
+    tables: 0,
+    staff: 0,
+    scans: 0,
+  });
   const [loading, setLoading] = useState(true);
 
-  async function load() {
+  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
+
+  async function loadDashboard() {
     try {
       const ctx = await fetchOwnerContext();
+
       setProfile(ctx.profile);
       setRestaurant(ctx.restaurant);
-      setBranches(ctx.branches);
-      if (!ctx.profile?.restaurant_id) return;
+
+      if (!ctx.profile?.restaurant_id) {
+        setOrders([]);
+        setStats({
+          todayOrders: 0,
+          todayRevenue: 0,
+          activeOrders: 0,
+          readyOrders: 0,
+          servedOrders: 0,
+          menuItems: 0,
+          tables: 0,
+          staff: 0,
+          scans: 0,
+        });
+        return;
+      }
+
       const restaurantId = ctx.profile.restaurant_id;
-      const [orderRows, menuRows, tableRows, staffRows, scanRows] = await Promise.all([
+
+      const [
+        orderRows,
+        menuCount,
+        tableCount,
+        staffCount,
+        scanCount,
+      ] = await Promise.all([
         fetchOrders(restaurantId),
-        fetchMenu(restaurantId),
-        supabase.from("masaqr_tables").select("*").eq("restaurant_id", restaurantId),
-        supabase.from("masaqr_users").select("id", { count: "exact", head: true }).eq("restaurant_id", restaurantId).neq("role", "owner"),
-        supabase.from("masaqr_activity_logs").select("id", { count: "exact", head: true }).eq("restaurant_id", restaurantId).in("event_type", ["menu_scan", "menu_view"]),
+
+        supabase
+          .from("masaqr_menu_items")
+          .select("id", { count: "exact", head: true })
+          .eq("restaurant_id", restaurantId),
+
+        supabase
+          .from("masaqr_tables")
+          .select("id", { count: "exact", head: true })
+          .eq("restaurant_id", restaurantId),
+
+        supabase
+          .from("masaqr_users")
+          .select("id", { count: "exact", head: true })
+          .eq("restaurant_id", restaurantId)
+          .neq("role", "owner"),
+
+        supabase
+          .from("masaqr_activity_logs")
+          .select("id", { count: "exact", head: true })
+          .eq("restaurant_id", restaurantId)
+          .in("event_type", ["menu_scan", "menu_view"]),
       ]);
+
+      if (menuCount.error) throw menuCount.error;
+      if (tableCount.error) throw tableCount.error;
+      if (staffCount.error) throw staffCount.error;
+      if (scanCount.error) throw scanCount.error;
+
+      const todayOrders = orderRows.filter((order) =>
+        order.created_at.startsWith(today)
+      );
+
+      const todayRevenue = todayOrders
+        .filter((order) => order.status !== "cancelled")
+        .reduce((sum, order) => sum + Number(order.total ?? 0), 0);
+
+      const activeOrders = orderRows.filter((order) =>
+        ["pending", "confirmed", "preparing", "ready", "picked_up"].includes(order.status)
+      );
+
+      const readyOrders = orderRows.filter((order) => order.status === "ready");
+      const servedOrders = orderRows.filter((order) => order.status === "served");
+
       setOrders(orderRows);
-      setItems(menuRows.items);
-      if (tableRows.error) throw tableRows.error;
-      setTables((tableRows.data ?? []) as TableRow[]);
-      if (staffRows.error) throw staffRows.error;
-      setStaffCount(staffRows.count ?? 0);
-      if (scanRows.error) throw scanRows.error;
-      setScans(scanRows.count ?? 0);
-    } catch (err: any) {
-      toast.error(err.message ?? "Could not load dashboard");
+
+      setStats({
+        todayOrders: todayOrders.length,
+        todayRevenue,
+        activeOrders: activeOrders.length,
+        readyOrders: readyOrders.length,
+        servedOrders: servedOrders.length,
+        menuItems: menuCount.count ?? 0,
+        tables: tableCount.count ?? 0,
+        staff: staffCount.count ?? 0,
+        scans: scanCount.count ?? 0,
+      });
+    } catch (error: any) {
+      toast.error(error.message ?? "Could not load dashboard");
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    load();
-    const channel = supabase.channel("dashboard-live")
-      .on("postgres_changes", { event: "*", schema: "public", table: "masaqr_orders" }, () => load())
-      .on("postgres_changes", { event: "*", schema: "public", table: "masaqr_waiter_requests" }, () => load())
+    loadDashboard();
+
+    const channel = supabase
+      .channel("dashboard-live")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "masaqr_orders" },
+        () => loadDashboard()
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "masaqr_order_items" },
+        () => loadDashboard()
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "masaqr_activity_logs" },
+        () => loadDashboard()
+      )
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
-  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
-  const todayOrders = orders.filter(o => o.created_at.slice(0, 10) === today);
-  const todayRevenue = todayOrders.filter(o => o.status !== "cancelled").reduce((s, o) => s + Number(o.total ?? 0), 0);
-  const active = orders.filter(o => ["pending", "confirmed", "preparing", "ready", "picked_up"].includes(o.status));
-  const ready = orders.filter(o => o.status === "ready");
-  const served = orders.filter(o => o.status === "served");
+  const activeOrders = orders.filter((order) =>
+    ["pending", "confirmed", "preparing", "ready", "picked_up"].includes(order.status)
+  );
 
-  if (loading) return <div className="p-6 md:p-10 text-sm text-muted-foreground">Loading dashboard…</div>;
+  if (loading) {
+    return <div className="p-6 text-sm text-muted-foreground">Loading dashboard…</div>;
+  }
+
+  if (!profile?.restaurant_id) {
+    return (
+      <div>
+        <PageHeader
+          title="Dashboard"
+          description="Complete restaurant setup to start using live statistics."
+        />
+        <div className="p-6">
+          <Card className="p-6">
+            <h2 className="text-lg font-semibold">Restaurant setup required</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              This account is logged in, but it is not connected to a restaurant yet.
+            </p>
+            <Button asChild className="mt-4">
+              <Link to="/setup">Open setup</Link>
+            </Button>
+          </Card>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-6 md:p-10">
+    <div>
       <PageHeader
-        title={`Good evening, ${restaurant?.name ?? profile?.full_name ?? "MasaQR"}`}
-        subtitle={restaurant ? `Live data from ${restaurant.name}` : "Create your restaurant setup to start using MasaQR"}
-        actions={<><Button asChild variant="outline"><Link to="/kitchen">Open kitchen</Link></Button>{restaurant && <Button asChild className="bg-ember hover:bg-ember/90 text-ember-foreground"><Link to="/m/$slug/$table" params={{ slug: restaurant.slug, table: "1" }}>View guest menu</Link></Button>}</>}
+        title="Dashboard"
+        description={restaurant ? `${restaurant.name} live overview` : "Live overview"}
+        action={
+          <div className="flex gap-2">
+            <Button asChild variant="outline">
+              <Link to="/kitchen">Open kitchen</Link>
+            </Button>
+            {restaurant ? (
+              <Button asChild>
+                <Link to="/m/$slug/$table" params={{ slug: restaurant.slug, table: "1" }}>
+                  View guest menu
+                </Link>
+              </Button>
+            ) : null}
+          </div>
+        }
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <Stat icon={ShoppingBag} label="Today's orders" value={todayOrders.length} hint="Real Supabase orders" tone="accent" />
-        <Stat icon={Activity} label="Today's revenue" value={money(todayRevenue, restaurant?.currency ?? "AZN")} hint="Cancelled excluded" />
-        <Stat icon={CheckCircle2} label="Active orders" value={active.length} hint={`${ready.length} ready to serve`} />
-        <Stat icon={ChefHat} label="Served orders" value={served.length} hint="Completed workflow" />
-        <Stat icon={QrCode} label="QR scans" value={scans} hint="From activity logs" />
-        <Stat icon={Users} label="Tables" value={tables.length} hint={`${branches.length} branch(es)`} />
-        <Stat icon={BookOpen} label="Menu items" value={items.length} hint="From menu builder" />
-        <Stat icon={Users} label="Staff" value={staffCount} hint="Non-owner profiles" />
+      <div className="grid gap-4 p-6 md:grid-cols-2 xl:grid-cols-4">
+        <Stat
+          icon={ShoppingBag}
+          label="Today orders"
+          value={stats.todayOrders}
+          hint="From Supabase orders"
+          tone="accent"
+        />
+        <Stat
+          icon={Activity}
+          label="Today revenue"
+          value={money(stats.todayRevenue, restaurant?.currency ?? "AZN")}
+          hint="Excludes cancelled orders"
+        />
+        <Stat
+          icon={BellRing}
+          label="Active orders"
+          value={stats.activeOrders}
+          hint={`${stats.readyOrders} ready for waiter`}
+          tone={stats.readyOrders > 0 ? "warn" : "default"}
+        />
+        <Stat
+          icon={CheckCircle2}
+          label="Served orders"
+          value={stats.servedOrders}
+          hint="All-time served orders"
+        />
+        <Stat
+          icon={BookOpen}
+          label="Menu items"
+          value={stats.menuItems}
+          hint="Real menu items"
+        />
+        <Stat
+          icon={QrCode}
+          label="Tables"
+          value={stats.tables}
+          hint="QR tables"
+        />
+        <Stat
+          icon={Users}
+          label="Staff"
+          value={stats.staff}
+          hint="Non-owner users"
+        />
+        <Stat
+          icon={Activity}
+          label="Menu views"
+          value={stats.scans}
+          hint="From activity logs"
+        />
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-4">
-        <Card className="lg:col-span-2 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-display text-xl">Live order feed</h2>
-            <Link to="/app/orders" className="text-xs text-ember hover:underline flex items-center gap-1">All orders <ArrowUpRight className="h-3 w-3" /></Link>
+      <div className="grid gap-6 px-6 pb-6 xl:grid-cols-[1.4fr_0.8fr]">
+        <Card className="p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">Live order feed</h2>
+              <p className="text-sm text-muted-foreground">Real active orders from Supabase</p>
+            </div>
+            <Button asChild variant="outline" size="sm">
+              <Link to="/app/orders">
+                All orders <ArrowUpRight className="ml-1 h-4 w-4" />
+              </Link>
+            </Button>
           </div>
-          <div className="space-y-2">
-            {active.slice(0, 6).map(o => (
-              <div key={o.id} className="flex items-center gap-4 p-3 rounded-r-lg border-l-4 bg-ember/5 border-l-ember">
-                <div className="font-mono text-sm font-bold w-16">{shortOrder(o.id)}</div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm truncate">{o.items.reduce((s, i) => s + i.quantity, 0)} item(s) · {money(o.total, restaurant?.currency ?? "AZN")}</div>
-                  <div className="text-xs text-muted-foreground">{o.table?.table_name ?? `Table ${o.table?.table_number ?? "?"}`} · {minsAgoIso(o.created_at)}m ago</div>
+
+          <div className="space-y-3">
+            {activeOrders.slice(0, 6).map((order) => (
+              <div
+                key={order.id}
+                className="flex items-center justify-between rounded-2xl border bg-background p-4"
+              >
+                <div>
+                  <p className="font-medium">{shortOrder(order.id)}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {order.items.reduce((sum, item) => sum + item.quantity, 0)} item(s) ·{" "}
+                    {money(order.total, restaurant?.currency ?? "AZN")}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {order.table?.table_name ?? `Table ${order.table?.table_number ?? "?"}`} ·{" "}
+                    {minsAgoIso(order.created_at)}m ago
+                  </p>
                 </div>
-                <span className="text-xs uppercase tracking-wider px-2 py-1 rounded bg-background border">{o.status}</span>
+                <span className="rounded-full border px-3 py-1 text-xs capitalize">
+                  {order.status.replace("_", " ")}
+                </span>
               </div>
             ))}
-            {active.length === 0 && <div className="text-sm text-muted-foreground text-center py-8">No open orders.</div>}
+
+            {activeOrders.length === 0 ? (
+              <div className="rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+                No open orders.
+              </div>
+            ) : null}
           </div>
         </Card>
-        <Card className="p-6">
-          <h2 className="font-display text-xl mb-4">Quick access</h2>
-          <div className="grid grid-cols-2 gap-2">
-            {[{ to: "/app/menu", icon: BookOpen, label: "Edit menu" }, { to: "/app/pdf", icon: FileText, label: "PDF menu" }, { to: "/app/tables", icon: QrCode, label: "QR & tables" }, { to: "/kitchen", icon: ChefHat, label: "Kitchen" }, { to: "/waiter", icon: BellRing, label: "Waiter" }, { to: "/app/staff", icon: Users, label: "Staff" }].map(({ to, icon: Icon, label }) => (
-              <Link key={to} to={to} className="rounded-lg border bg-card p-3 hover:border-ember/40 hover:bg-ember/5 transition group">
-                <Icon className="h-5 w-5 text-ember mb-2" /><div className="text-sm font-medium">{label}</div>
-              </Link>
+
+        <Card className="p-5">
+          <h2 className="text-lg font-semibold">Quick access</h2>
+          <p className="mb-4 text-sm text-muted-foreground">Operational screens</p>
+
+          <div className="grid gap-2">
+            {[
+              { to: "/app/menu", icon: BookOpen, label: "Edit menu" },
+              { to: "/app/pdf", icon: FileText, label: "PDF menu" },
+              { to: "/app/tables", icon: QrCode, label: "QR & tables" },
+              { to: "/kitchen", icon: ChefHat, label: "Kitchen" },
+              { to: "/waiter", icon: BellRing, label: "Waiter" },
+              { to: "/app/staff", icon: Users, label: "Staff" },
+            ].map(({ to, icon: Icon, label }) => (
+              <Button key={to} asChild variant="outline" className="justify-start">
+                <Link to={to as any}>
+                  <Icon className="mr-2 h-4 w-4" />
+                  {label}
+                </Link>
+              </Button>
             ))}
           </div>
         </Card>
