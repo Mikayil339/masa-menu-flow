@@ -77,8 +77,8 @@ function Waiter() {
     }
   }
 
-  const open = alerts.filter(a => a.status === "open");
-  const handled = alerts.filter(a => a.status !== "open").slice(0, 6);
+  const open = alerts.filter(a => a.status === "open" && a.type !== "ready_order");
+  const handled = alerts.filter(a => a.status !== "open" && a.type !== "ready_order").slice(0, 6);
 
   return (
     <div className="min-h-screen bg-background">
