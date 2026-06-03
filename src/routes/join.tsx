@@ -114,13 +114,12 @@ function JoinPage() {
         branchId: invite.branch_id ?? null,
       });
 
-      toast.success(`Welcome, ${cleanName}`);
+      toast.success(`Xoş gəlmisiniz, ${cleanName}`);
 
-      if (role === "kitchen") nav({ to: "/kitchen" });
-      else if (role === "waiter") nav({ to: "/waiter" });
+      if (role === "waiter" || role === "kitchen" || role === "staff") nav({ to: "/waiter" });
       else nav({ to: "/app" });
     } catch (error: any) {
-      toast.error(error.message ?? "Could not join team");
+      toast.error(error.message ?? "Komandaya qoşulmaq mümkün olmadı");
     } finally {
       setLoading(false);
     }
@@ -131,14 +130,14 @@ function JoinPage() {
       <PublicNav />
 
       <div className="mx-auto max-w-md px-6 py-16">
-        <h1 className="font-display text-3xl">Join your team</h1>
+        <h1 className="font-display text-3xl">Komandaya qoşul</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Enter the invite code from your manager.
+          Restoran rəhbərindən aldığınız dəvət kodunu daxil edin.
         </p>
 
         <form className="mt-8 space-y-4" onSubmit={handleJoin}>
           <div className="space-y-1.5">
-            <Label>Invite code</Label>
+            <Label>Dəvət kodu</Label>
             <Input
               value={code}
               onChange={(e) => setCode(e.target.value.toUpperCase())}
@@ -149,7 +148,7 @@ function JoinPage() {
           </div>
 
           <div className="space-y-1.5">
-            <Label>Your name</Label>
+            <Label>Adınız</Label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -159,18 +158,18 @@ function JoinPage() {
           </div>
 
           <div className="space-y-1.5">
-            <Label>Email</Label>
+            <Label>E-poçt</Label>
             <Input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="staff@example.com"
+              placeholder="ofisiant@restoran.az"
               required
             />
           </div>
 
           <div className="space-y-1.5">
-            <Label>Create password</Label>
+            <Label>Şifrə yarat</Label>
             <Input
               type="password"
               value={password}
@@ -181,12 +180,12 @@ function JoinPage() {
           </div>
 
           <Button type="submit" disabled={loading} className="w-full">
-            {loading ? "Joining..." : "Join team"}
+            {loading ? "Qoşulunur…" : "Komandaya qoşul"}
           </Button>
         </form>
 
         <div className="mt-6 text-center text-sm">
-          Already on the team? <Link to="/login" className="text-ember">Sign in</Link>
+          Komandadasınız? <Link to="/login" className="text-ember">Daxil ol</Link>
         </div>
       </div>
 
