@@ -7,7 +7,7 @@ import {
   QrCode,
   BookOpen,
   FileText,
-  ChefHat,
+  
   Users,
   BellRing,
   ArrowUpRight,
