@@ -2,27 +2,27 @@ import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { ReactNode } from "react";
 import {
   LayoutDashboard, ShoppingBag, BookOpen, FileText, QrCode, Users, BarChart3,
-  Building2, CreditCard, LifeBuoy, Settings, ChefHat, Bell, LogOut, ExternalLink, Lock, ArrowLeft
+  CreditCard, LifeBuoy, Settings, Bell, LogOut, ExternalLink, Lock, ArrowLeft
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Logo } from "./Logo";
 import { useStore, type Role } from "@/lib/store";
 import { Button } from "@/components/ui/button";
+import { T } from "@/lib/i18n";
 
 type NavItem = { to: string; label: string; icon: any; exact?: boolean; allow: Role[] };
 
 const nav: NavItem[] = [
-  { to: "/app", label: "Dashboard", icon: LayoutDashboard, exact: true, allow: ["owner", "manager"] },
-  { to: "/app/orders", label: "Orders", icon: ShoppingBag, allow: ["owner", "manager"] },
-  { to: "/app/menu", label: "Menu Builder", icon: BookOpen, allow: ["owner", "manager"] },
-  { to: "/app/pdf", label: "PDF Menu", icon: FileText, allow: ["owner", "manager"] },
-  { to: "/app/tables", label: "QR & Tables", icon: QrCode, allow: ["owner", "manager"] },
-  { to: "/app/analytics", label: "Analytics", icon: BarChart3, allow: ["owner", "manager"] },
-  { to: "/app/staff", label: "Staff", icon: Users, allow: ["owner", "manager"] },
-  { to: "/app/branches", label: "Branches", icon: Building2, allow: ["owner", "manager"] },
-  { to: "/app/plan", label: "Plan", icon: CreditCard, allow: ["owner"] },
-  { to: "/app/support", label: "Support", icon: LifeBuoy, allow: ["owner", "manager"] },
-  { to: "/app/settings", label: "Settings", icon: Settings, allow: ["owner", "manager"] },
+  { to: "/app", label: T.nav.panel, icon: LayoutDashboard, exact: true, allow: ["owner", "manager"] },
+  { to: "/app/orders", label: T.nav.sessions, icon: ShoppingBag, allow: ["owner", "manager"] },
+  { to: "/app/menu", label: T.nav.menu, icon: BookOpen, allow: ["owner", "manager"] },
+  { to: "/app/tables", label: T.nav.tablesQr, icon: QrCode, allow: ["owner", "manager"] },
+  { to: "/app/staff", label: T.nav.waiters, icon: Users, allow: ["owner", "manager"] },
+  { to: "/app/pdf", label: T.nav.pdf, icon: FileText, allow: ["owner", "manager"] },
+  { to: "/app/analytics", label: T.nav.analytics, icon: BarChart3, allow: ["owner", "manager"] },
+  { to: "/app/settings", label: T.nav.settings, icon: Settings, allow: ["owner", "manager"] },
+  { to: "/app/plan", label: T.nav.plan, icon: CreditCard, allow: ["owner"] },
+  { to: "/app/support", label: T.nav.support, icon: LifeBuoy, allow: ["owner", "manager"] },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
