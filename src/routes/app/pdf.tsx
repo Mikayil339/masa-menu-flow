@@ -104,96 +104,11 @@ function PdfStudio() {
     });
   }
 
-  function printMenuOnly() {
-    const printArea = document.getElementById("pdf-menu-print-area");
-
-    if (!printArea) {
-      toast.error("PDF preview area was not found");
-      return;
-    }
-
-    const printWindow = window.open("", "_blank", "width=900,height=1200");
-
-    if (!printWindow) {
-      toast.error("Popup blocked. Allow popups and try again.");
-      return;
-    }
-
-    const headHtml = Array.from(document.head.querySelectorAll('style, link[rel="stylesheet"]'))
-      .map((node) => node.outerHTML)
-      .join("\n");
-
-    printWindow.document.open();
-    printWindow.document.write(`
-      <!doctype html>
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <meta name="viewport" content="width=device-width, initial-scale=1" />
-          <title>PDF Menu — ${restaurant?.name ?? "MasaQR"}</title>
-          ${headHtml}
-          <style>
-            @page {
-              size: A4 portrait;
-              margin: 12mm;
-            }
-
-            html,
-            body {
-              margin: 0;
-              padding: 0;
-              background: #ffffff !important;
-              color: #111827;
-              -webkit-print-color-adjust: exact;
-              print-color-adjust: exact;
-            }
-
-            body {
-              width: 100%;
-            }
-
-            #print-root {
-              width: 100%;
-              background: #ffffff !important;
-            }
-
-            .print-page {
-              break-after: page;
-              page-break-after: always;
-              box-shadow: none !important;
-            }
-
-            .print-page:last-child {
-              break-after: auto;
-              page-break-after: auto;
-            }
-
-            img {
-              max-width: 100%;
-            }
-          </style>
-        </head>
-        <body>
-          <div id="print-root">${printArea.innerHTML}</div>
-          <script>
-            window.addEventListener('load', function () {
-              setTimeout(function () {
-                window.focus();
-                window.print();
-              }, 350);
-            });
-          </script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-  }
-
   async function exportPdf() {
     setExporting(true);
 
     try {
-      printMenuOnly();
+      window.print();
       await recordExport("created");
       toast.success("PDF export recorded");
     } catch (error: any) {
@@ -230,43 +145,6 @@ function PdfStudio() {
 
   return (
     <div>
-      <style>{`
-        @media print {
-          @page {
-            size: A4 portrait;
-            margin: 12mm;
-          }
-
-          body * {
-            visibility: hidden !important;
-          }
-
-          #pdf-menu-print-area,
-          #pdf-menu-print-area * {
-            visibility: visible !important;
-          }
-
-          #pdf-menu-print-area {
-            position: absolute !important;
-            inset: 0 auto auto 0 !important;
-            width: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            background: white !important;
-            box-shadow: none !important;
-          }
-
-          #pdf-menu-print-area .print-page {
-            break-after: page;
-            page-break-after: always;
-          }
-
-          #pdf-menu-print-area .print-page:last-child {
-            break-after: auto;
-            page-break-after: auto;
-          }
-        }
-      `}</style>
       <PageHeader
         title="PDF Menu"
         subtitle="Preview and print a real menu using Supabase categories and items."
@@ -274,11 +152,11 @@ function PdfStudio() {
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={copyPublicLink}>
               <LinkIcon className="mr-2 h-4 w-4" />
-              Copy menu link
+              Copy link
             </Button>
-            <Button variant="outline" onClick={printMenuOnly}>
+            <Button variant="outline" onClick={() => window.print()}>
               <Printer className="mr-2 h-4 w-4" />
-              Print menu
+              Print
             </Button>
             <Button onClick={exportPdf} disabled={exporting}>
               <Download className="mr-2 h-4 w-4" />
@@ -373,23 +251,17 @@ function PdfStudio() {
         </Card>
 
         <Card className="overflow-hidden bg-muted/30 p-4 print:bg-white print:p-0">
-          <div
-            id="pdf-menu-print-area"
-            className="mx-auto max-w-4xl rounded-3xl bg-white shadow-sm print:max-w-none print:rounded-none print:shadow-none"
-          >
-            <div className="print-page">
-              <PdfCover restaurant={restaurant} settings={settings} />
-            </div>
+          <div className="mx-auto max-w-4xl rounded-3xl bg-white shadow-sm print:max-w-none print:rounded-none print:shadow-none">
+            <PdfCover restaurant={restaurant} settings={settings} />
 
             {categories.map((category) => (
-              <div key={category.id} className="print-page">
-                <PdfPage
-                  category={category}
-                  items={visibleItems.filter((item) => item.category_id === category.id)}
-                  restaurant={restaurant}
-                  settings={settings}
-                />
-              </div>
+              <PdfPage
+                key={category.id}
+                category={category}
+                items={visibleItems.filter((item) => item.category_id === category.id)}
+                restaurant={restaurant}
+                settings={settings}
+              />
             ))}
 
             {categories.length === 0 ? (
