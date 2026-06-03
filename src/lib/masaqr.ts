@@ -145,3 +145,144 @@ export async function updateOrderStatus(order: OrderRow, status: string, userId?
     });
   }
 }
+
+// =====================================================================
+// Phase 1 additions — sessions, pricing, suggestions, assignments, uploads.
+// Requires migration db/migrations/20260603105753_masaqr_session_pivot.sql
+// =====================================================================
+
+export type CustomerType = "local" | "foreign";
+export type WaiterAssignmentMode = "manual_table_ranges" | "first_confirming_waiter" | "disabled";
+
+export type TableSessionRow = {
+  id: string;
+  restaurant_id: string;
+  table_id: string;
+  assigned_waiter_id: string | null;
+  customer_session_id: string | null;
+  customer_type: CustomerType;
+  status: "open" | "closed" | "cancelled";
+  total: number | string;
+  opened_at: string;
+  closed_at: string | null;
+  closed_by: string | null;
+};
+
+export type SuggestionRow = {
+  id: string;
+  restaurant_id: string;
+  source_item_id: string;
+  suggested_item_id: string;
+  sort_order: number;
+  is_active: boolean;
+};
+
+export type WaiterAssignmentRow = {
+  id: string;
+  restaurant_id: string;
+  waiter_id: string;
+  table_id: string;
+  is_active: boolean;
+};
+
+/** Resolve menu item price for a given customer type. Falls back to default `price`. */
+export function priceFor(item: Pick<MenuItemRow, "price"> & { price_local?: number | string | null; price_foreign?: number | string | null }, customerType: CustomerType = "local"): number {
+  const fallback = Number(item.price ?? 0);
+  if (customerType === "foreign" && item.price_foreign != null) return Number(item.price_foreign);
+  if (customerType === "local" && item.price_local != null) return Number(item.price_local);
+  return fallback;
+}
+
+/** Find an open session for the table, or create one. Used by customer flow on first order. */
+export async function openOrGetSession(params: {
+  restaurantId: string;
+  tableId: string;
+  customerSessionId: string;
+  customerType?: CustomerType;
+}): Promise<TableSessionRow> {
+  const { restaurantId, tableId, customerSessionId, customerType = "local" } = params;
+  const { data: existing, error: findError } = await supabase
+    .from("masaqr_table_sessions")
+    .select("*")
+    .eq("table_id", tableId)
+    .eq("status", "open")
+    .order("opened_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (findError) throw findError;
+  if (existing) return existing as TableSessionRow;
+
+  const { data: inserted, error: insertError } = await supabase
+    .from("masaqr_table_sessions")
+    .insert({
+      restaurant_id: restaurantId,
+      table_id: tableId,
+      customer_session_id: customerSessionId,
+      customer_type: customerType,
+      status: "open",
+    })
+    .select("*")
+    .single();
+  if (insertError) throw insertError;
+
+  // Mark table as occupied (best-effort; ignore RLS denial silently — manager view recomputes from sessions).
+  await supabase.from("masaqr_tables").update({ status: "occupied" }).eq("id", tableId);
+  return inserted as TableSessionRow;
+}
+
+export async function closeSession(sessionId: string, closedBy: string | null) {
+  const { data: session, error: getError } = await supabase
+    .from("masaqr_table_sessions")
+    .select("table_id")
+    .eq("id", sessionId)
+    .single();
+  if (getError) throw getError;
+  const { error } = await supabase
+    .from("masaqr_table_sessions")
+    .update({ status: "closed", closed_at: new Date().toISOString(), closed_by: closedBy })
+    .eq("id", sessionId);
+  if (error) throw error;
+  if (session?.table_id) {
+    await supabase.from("masaqr_tables").update({ status: "available" }).eq("id", session.table_id);
+  }
+}
+
+/** Determine which waiter (if any) should be the initial assignee for a new order. */
+export async function resolveInitialWaiter(params: {
+  restaurantId: string;
+  tableId: string;
+  mode: WaiterAssignmentMode;
+}): Promise<string | null> {
+  if (params.mode !== "manual_table_ranges") return null;
+  const { data } = await supabase
+    .from("masaqr_waiter_table_assignments")
+    .select("waiter_id")
+    .eq("table_id", params.tableId)
+    .eq("is_active", true)
+    .maybeSingle();
+  return (data?.waiter_id as string) ?? null;
+}
+
+export async function fetchSuggestionsFor(restaurantId: string, sourceItemIds: string[]) {
+  if (!sourceItemIds.length) return [] as SuggestionRow[];
+  const { data, error } = await supabase
+    .from("masaqr_menu_item_suggestions")
+    .select("*")
+    .eq("restaurant_id", restaurantId)
+    .eq("is_active", true)
+    .in("source_item_id", sourceItemIds)
+    .order("sort_order", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as SuggestionRow[];
+}
+
+/** Upload a local image to a Supabase Storage bucket and return the public URL. */
+export async function uploadImage(bucket: "masaqr-logos" | "masaqr-covers" | "masaqr-menu-images", file: File, prefix = ""): Promise<string> {
+  const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
+  const path = `${prefix ? prefix.replace(/\/+$/, "") + "/" : ""}${crypto.randomUUID()}.${ext}`;
+  const { error } = await supabase.storage.from(bucket).upload(path, file, { upsert: false, contentType: file.type });
+  if (error) throw error;
+  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+  return data.publicUrl;
+}
+
