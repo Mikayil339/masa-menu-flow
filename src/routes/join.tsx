@@ -3,54 +3,194 @@ import { PublicNav, PublicFooter } from "@/components/PublicNav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useStore } from "@/lib/store";
+import { useStore, type Role } from "@/lib/store";
+import { supabase } from "@/lib/supabase";
 import { useState } from "react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/join")({
-  head: () => ({ meta: [{ title: "Join your team — MasaQR" }] }),
-  component: () => {
-    const nav = useNavigate();
-    const { acceptInvite, login, invites } = useStore();
-    const [code, setCode] = useState(invites[0]?.code ?? "");
-    const [name, setName] = useState("");
-
-    return (
-      <div>
-        <PublicNav />
-        <div className="mx-auto max-w-md px-6 py-16">
-          <h1 className="font-display text-3xl">Join your team</h1>
-          <p className="text-sm text-muted-foreground mt-1">Enter the invite code from your manager.</p>
-          <form
-            className="mt-8 space-y-4"
-            onSubmit={e => {
-              e.preventDefault();
-              const member = acceptInvite(code.toUpperCase(), name);
-              if (!member) { toast.error("Invalid or expired code"); return; }
-              login({ email: member.email, role: member.role, name: member.name, branchId: "br1" });
-              toast.success(`Welcome, ${member.name}`);
-              if (member.role === "kitchen") nav({ to: "/kitchen" });
-              else if (member.role === "waiter") nav({ to: "/waiter" });
-              else nav({ to: "/app" });
-            }}
-          >
-            <div className="space-y-1.5"><Label>Invite code</Label><Input required value={code} onChange={e => setCode(e.target.value)} placeholder="ABC123" className="font-mono tracking-widest" /></div>
-            <div className="space-y-1.5"><Label>Your name</Label><Input required value={name} onChange={e => setName(e.target.value)} /></div>
-            <div className="space-y-1.5"><Label>Create password</Label><Input type="password" required placeholder="Min 8 characters" /></div>
-            <Button type="submit" className="w-full bg-ember hover:bg-ember/90 text-ember-foreground">Join team</Button>
-          </form>
-          {invites.length > 0 && (
-            <div className="mt-6 text-xs text-muted-foreground border-t pt-4">
-              <p className="font-medium mb-1">Pending invites (demo):</p>
-              {invites.filter(i => i.status === "pending").map(i => (
-                <div key={i.id} className="flex justify-between"><span>{i.email} · {i.role}</span><button onClick={() => setCode(i.code)} className="font-mono text-ember">{i.code}</button></div>
-              ))}
-            </div>
-          )}
-          <div className="mt-4 text-center text-xs"><Link to="/login">Already on the team? Sign in</Link></div>
-        </div>
-        <PublicFooter />
-      </div>
-    );
-  },
+  head: () => ({
+    meta: [{ title: "Join your team — MasaQR" }],
+  }),
+  component: JoinPage,
 });
+
+function JoinPage() {
+  const nav = useNavigate();
+  const { login } = useStore();
+
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleJoin(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      const inviteCode = code.trim().toUpperCase();
+      const cleanEmail = email.trim().toLowerCase();
+      const cleanName = name.trim();
+
+      const { data: invite, error: inviteError } = await supabase
+        .from("masaqr_staff_invites")
+        .select("id,restaurant_id,branch_id,code,role,status,expires_at")
+        .eq("code", inviteCode)
+        .eq("status", "active")
+        .maybeSingle();
+
+      if (inviteError) throw inviteError;
+
+      if (!invite) {
+        toast.error("Invalid or expired code");
+        return;
+      }
+
+      if (invite.expires_at && new Date(invite.expires_at).getTime() < Date.now()) {
+        toast.error("Invalid or expired code");
+        return;
+      }
+
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email: cleanEmail,
+        password,
+        options: {
+          data: {
+            full_name: cleanName,
+          },
+        },
+      });
+
+      if (signUpError) throw signUpError;
+
+      let userId = signUpData.user?.id ?? null;
+
+      if (!userId || !signUpData.session) {
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password,
+        });
+
+        if (signInError) {
+          toast.error("Account created, but email confirmation may be required before login.");
+          return;
+        }
+
+        userId = signInData.user?.id ?? null;
+      }
+
+      if (!userId) {
+        toast.error("Could not create staff user");
+        return;
+      }
+
+      const role = invite.role as Role;
+
+      const { error: profileError } = await supabase.from("masaqr_users").upsert({
+        id: userId,
+        email: cleanEmail,
+        full_name: cleanName,
+        role,
+        restaurant_id: invite.restaurant_id,
+        branch_id: invite.branch_id,
+        status: "active",
+      });
+
+      if (profileError) throw profileError;
+
+      const { error: usedError } = await supabase
+        .from("masaqr_staff_invites")
+        .update({ status: "used", used_by: userId })
+        .eq("id", invite.id);
+
+      if (usedError) throw usedError;
+
+      login({
+        email: cleanEmail,
+        role,
+        name: cleanName,
+        branchId: invite.branch_id ?? null,
+      });
+
+      toast.success(`Welcome, ${cleanName}`);
+
+      if (role === "kitchen") nav({ to: "/kitchen" });
+      else if (role === "waiter") nav({ to: "/waiter" });
+      else nav({ to: "/app" });
+    } catch (error: any) {
+      toast.error(error.message ?? "Could not join team");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div>
+      <PublicNav />
+
+      <div className="mx-auto max-w-md px-6 py-16">
+        <h1 className="font-display text-3xl">Join your team</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Enter the invite code from your manager.
+        </p>
+
+        <form className="mt-8 space-y-4" onSubmit={handleJoin}>
+          <div className="space-y-1.5">
+            <Label>Invite code</Label>
+            <Input
+              value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              placeholder="MQ-ABC123"
+              className="font-mono tracking-widest"
+              required
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Your name</Label>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Samir"
+              required
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Email</Label>
+            <Input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="staff@example.com"
+              required
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Create password</Label>
+            <Input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={6}
+            />
+          </div>
+
+          <Button type="submit" disabled={loading} className="w-full">
+            {loading ? "Joining..." : "Join team"}
+          </Button>
+        </form>
+
+        <div className="mt-6 text-center text-sm">
+          Already on the team? <Link to="/login" className="text-ember">Sign in</Link>
+        </div>
+      </div>
+
+      <PublicFooter />
+    </div>
+  );
+}
