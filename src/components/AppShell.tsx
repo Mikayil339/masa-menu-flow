@@ -108,7 +108,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <div className="text-[10px] uppercase text-sidebar-foreground/50">Plan</div>
             <div className="text-xs">{plan.tier === "trial" ? `Trial · ${trialDays}d left` : plan.tier}</div>
             <div className="text-[10px] uppercase text-sidebar-foreground/50 mt-2">{T.nav.role}</div>
-            <div className="text-xs capitalize">{role === "owner" ? T.roles.manager : role === "manager" ? T.roles.manager : role === "waiter" ? T.roles.waiter : role}</div>
+            <div className="text-xs capitalize">{role === "waiter" ? T.roles.waiter : T.roles.manager}</div>
           </div>
           <button onClick={() => { supabase.auth.signOut(); logout(); nav2({ to: "/login" }); }} className="flex items-center gap-2 text-xs text-sidebar-foreground/70 hover:text-sidebar-foreground">
             <LogOut className="h-3.5 w-3.5" /> Sign out · {auth.email}
