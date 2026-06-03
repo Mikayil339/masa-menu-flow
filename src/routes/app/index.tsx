@@ -380,12 +380,11 @@ function Dashboard() {
 
           <div className="grid gap-2">
             {[
-              { to: "/app/menu", icon: BookOpen, label: "Edit menu" },
-              { to: "/app/pdf", icon: FileText, label: "PDF menu" },
-              { to: "/app/tables", icon: QrCode, label: "QR & tables" },
-              { to: "/kitchen", icon: ChefHat, label: "Kitchen" },
-              { to: "/waiter", icon: BellRing, label: "Waiter" },
-              { to: "/app/staff", icon: Users, label: "Staff" },
+              { to: "/app/menu", icon: BookOpen, label: "Menyu" },
+              { to: "/app/pdf", icon: FileText, label: "PDF menyu" },
+              { to: "/app/tables", icon: QrCode, label: "Masalar və QR" },
+              { to: "/waiter", icon: BellRing, label: "Ofisiant ekranı" },
+              { to: "/app/staff", icon: Users, label: "Ofisiantlar" },
             ].map(({ to, icon: Icon, label }) => (
               <Button key={to} asChild variant="outline" className="justify-start">
                 <Link to={to as any}>
