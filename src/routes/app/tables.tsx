@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { PageHeader } from "@/components/AppShell";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -25,14 +25,13 @@ import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import {
   fetchOwnerContext,
-  type BranchRow,
   type Profile,
   type RestaurantRow,
   type TableRow,
 } from "@/lib/masaqr";
 
 export const Route = createFileRoute("/app/tables")({
-  head: () => ({ meta: [{ title: "QR & Tables — MasaQR" }] }),
+  head: () => ({ meta: [{ title: "Masalar və QR — MasaQR" }] }),
   component: TablesPage,
 });
 
@@ -51,11 +50,24 @@ const STATUS_STYLES: Record<MasaqrTableStatus, string> = {
   disabled: "bg-neutral-200 text-neutral-700 border-neutral-300",
 };
 
+const STATUS_LABELS: Record<MasaqrTableStatus, string> = {
+  available: "Boş",
+  occupied: "Dolu",
+  reserved: "Rezerv",
+  disabled: "Deaktiv",
+};
+
+const VIEW_LABELS = {
+  grid: "Kartlar",
+  list: "Siyahı",
+  print: "Çap",
+} as const;
+
 const PRINT_TEMPLATES = [
-  { id: "tent", name: "Table tent", desc: "Folded card, 2 sides" },
-  { id: "sticker", name: "Table sticker", desc: "Round, 80mm" },
-  { id: "sheet", name: "QR sheet · 6/page", desc: "Cut & distribute" },
-  { id: "branded", name: "Branded card", desc: "Cover image + QR" },
+  { id: "tent", name: "Masa kartı", desc: "Qatlanmış kart, iki tərəf" },
+  { id: "sticker", name: "Masa stikerı", desc: "Dairəvi, 80mm" },
+  { id: "sheet", name: "QR vərəqi · 6/səhifə", desc: "Kəs və masalara yerləşdir" },
+  { id: "branded", name: "Brendli kart", desc: "Üz şəkli + QR" },
 ];
 
 function getBaseUrl() {
@@ -64,7 +76,7 @@ function getBaseUrl() {
 }
 
 function tableLabel(table: TableRow) {
-  return table.table_name || `Table ${table.table_number}`;
+  return table.table_name || `Masa ${table.table_number}`;
 }
 
 function tableUrl(restaurant: RestaurantRow | null, table: TableRow) {
@@ -76,15 +88,13 @@ function newQrToken() {
   const bytes = new Uint8Array(12);
   crypto.getRandomValues(bytes);
   return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, "0"))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
 }
 
 function TablesPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [restaurant, setRestaurant] = useState<RestaurantRow | null>(null);
-  const [branches, setBranches] = useState<BranchRow[]>([]);
-  const [activeBranchId, setActiveBranchId] = useState<string>("");
   const [tables, setTables] = useState<TableRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"grid" | "list" | "print">("grid");
@@ -103,10 +113,6 @@ function TablesPage() {
       const ctx = await fetchOwnerContext();
       setProfile(ctx.profile);
       setRestaurant(ctx.restaurant);
-      setBranches(ctx.branches);
-
-      const defaultBranch = ctx.profile?.branch_id || ctx.branches[0]?.id || "";
-      setActiveBranchId((current) => current || defaultBranch);
 
       if (!ctx.profile?.restaurant_id) {
         setTables([]);
@@ -122,7 +128,7 @@ function TablesPage() {
       if (error) throw error;
       setTables((data ?? []) as TableRow[]);
     } catch (error: any) {
-      toast.error(error.message ?? "Could not load tables");
+      toast.error(error.message ?? "Masalar yüklənmədi");
     } finally {
       setLoading(false);
     }
@@ -145,26 +151,17 @@ function TablesPage() {
     };
   }, []);
 
-  const branchTables = useMemo(() => {
-    if (!activeBranchId) return tables;
-    return tables.filter((table) => table.branch_id === activeBranchId);
-  }, [tables, activeBranchId]);
+  const sortedTables = useMemo(() => tables, [tables]);
 
   async function createTable() {
     if (!profile?.restaurant_id) {
-      toast.error("Restaurant profile not found");
-      return;
-    }
-
-    const branchId = activeBranchId || branches[0]?.id;
-    if (!branchId) {
-      toast.error("Create a branch before adding tables");
+      toast.error("Restoran profili tapılmadı");
       return;
     }
 
     const tableNumber = draft.table_number.trim();
     if (!tableNumber) {
-      toast.error("Table number is required");
+      toast.error("Masa nömrəsi vacibdir");
       return;
     }
 
@@ -173,7 +170,6 @@ function TablesPage() {
     try {
       const { error } = await supabase.from("masaqr_tables").insert({
         restaurant_id: profile.restaurant_id,
-        branch_id: branchId,
         table_number: tableNumber,
         table_name: draft.table_name.trim() || null,
         status: draft.status,
@@ -181,12 +177,12 @@ function TablesPage() {
 
       if (error) throw error;
 
-      toast.success("Table added");
+      toast.success("Masa əlavə edildi");
       setDraft({ table_number: "", table_name: "", status: "available" });
       setCreateOpen(false);
       await loadTables();
     } catch (error: any) {
-      toast.error(error.message ?? "Could not add table");
+      toast.error(error.message ?? "Masa əlavə olunmadı");
     } finally {
       setCreating(false);
     }
@@ -221,23 +217,23 @@ function TablesPage() {
 
   async function copyLink(table: TableRow) {
     await navigator.clipboard.writeText(tableUrl(restaurant, table));
-    toast.success("QR link copied");
+    toast.success("QR link kopyalandı");
   }
 
   if (loading) {
-    return <div className="p-6 text-sm text-muted-foreground">Loading tables…</div>;
+    return <div className="p-6 text-sm text-muted-foreground">Masalar yüklənir…</div>;
   }
 
   if (!profile?.restaurant_id) {
     return (
       <div>
         <PageHeader
-          title="QR & Tables"
-          subtitle="Complete restaurant setup before creating table QR codes."
+          title="Masalar və QR"
+          subtitle="Masa QR kodları yaratmaq üçün əvvəl restoran qurulumunu tamamlayın."
         />
         <div className="p-6">
           <Card className="p-6 text-sm text-muted-foreground">
-            No restaurant is connected to this account.
+            Bu hesaba restoran qoşulmayıb.
           </Card>
         </div>
       </div>
@@ -247,20 +243,20 @@ function TablesPage() {
   return (
     <div>
       <PageHeader
-        title="QR & Tables"
-        subtitle="Generate real customer links from Supabase table records."
+        title="Masalar və QR"
+        subtitle="Masa QR linklərini restoran səviyyəsində yaradın və idarə edin."
         actions={
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => setView("print")}>
               <Printer className="mr-2 h-4 w-4" />
-              Print QRs
+              QR çapı
             </Button>
             <Button
               onClick={() => setCreateOpen(true)}
               className="bg-ember hover:bg-ember/90 text-ember-foreground"
             >
               <Plus className="mr-2 h-4 w-4" />
-              Add table
+              Masa əlavə et
             </Button>
           </div>
         }
@@ -269,62 +265,49 @@ function TablesPage() {
       <div className="p-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap gap-2">
-            {branches.length > 1 ? (
-              <select
-                value={activeBranchId}
-                onChange={(event) => setActiveBranchId(event.target.value)}
-                className="h-9 rounded-md border bg-background px-3 text-sm"
-              >
-                {branches.map((branch) => (
-                  <option key={branch.id} value={branch.id}>
-                    {branch.name}
-                  </option>
-                ))}
-              </select>
-            ) : null}
-
-            {(["grid", "list", "print"] as const).map((v) => (
+            {(["grid", "list", "print"] as const).map((value) => (
               <button
-                key={v}
-                onClick={() => setView(v)}
-                className={`px-3 py-1.5 rounded-md border text-sm capitalize ${
-                  view === v ? "bg-foreground text-background" : "bg-card hover:bg-muted"
+                key={value}
+                onClick={() => setView(value)}
+                className={`px-3 py-1.5 rounded-md border text-sm ${
+                  view === value ? "bg-foreground text-background" : "bg-card hover:bg-muted"
                 }`}
               >
-                {v}
+                {VIEW_LABELS[value]}
               </button>
             ))}
           </div>
 
           <Button variant="outline" size="sm" onClick={loadTables}>
             <RefreshCw className="mr-2 h-4 w-4" />
-            Refresh
+            Yenilə
           </Button>
         </div>
 
         {view === "grid" ? (
           <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
-            {branchTables.map((table) => (
-              <button
-                key={table.id}
-                onClick={() => setActive(table)}
-                className={`aspect-square rounded-xl border-2 p-3 flex flex-col items-start justify-between ${STATUS_STYLES[table.status as MasaqrTableStatus] ?? STATUS_STYLES.available} hover:scale-[1.02] transition text-left`}
-              >
-                <div>
-                  <div className="text-2xl font-semibold">{tableLabel(table)}</div>
-                  <div className="mt-1 text-xs capitalize">
-                    {table.status.replace("_", " ")}
+            {sortedTables.map((table) => {
+              const status = (table.status as MasaqrTableStatus) || "available";
+              return (
+                <button
+                  key={table.id}
+                  onClick={() => setActive(table)}
+                  className={`aspect-square rounded-xl border-2 p-3 flex flex-col items-start justify-between ${STATUS_STYLES[status] ?? STATUS_STYLES.available} hover:scale-[1.02] transition text-left`}
+                >
+                  <div>
+                    <div className="text-2xl font-semibold">{tableLabel(table)}</div>
+                    <div className="mt-1 text-xs">{STATUS_LABELS[status] ?? status}</div>
                   </div>
-                </div>
-                <div className="rounded-xl bg-background/70 p-2">
-                  <QRPattern value={tableUrl(restaurant, table)} size={72} />
-                </div>
-              </button>
-            ))}
+                  <div className="rounded-xl bg-background/70 p-2">
+                    <QRPattern value={tableUrl(restaurant, table)} size={72} />
+                  </div>
+                </button>
+              );
+            })}
 
-            {branchTables.length === 0 ? (
+            {sortedTables.length === 0 ? (
               <Card className="col-span-full border-dashed p-8 text-center text-sm text-muted-foreground">
-                No tables yet. Add your first QR table.
+                Hələ masa yoxdur. İlk QR masanı əlavə edin.
               </Card>
             ) : null}
           </div>
@@ -333,34 +316,37 @@ function TablesPage() {
         {view === "list" ? (
           <Card className="overflow-hidden">
             <div className="grid grid-cols-[1fr_2fr_1fr_1fr] gap-3 border-b px-4 py-3 text-xs font-medium uppercase text-muted-foreground">
-              <div>Table</div>
+              <div>Masa</div>
               <div>QR link</div>
               <div>Status</div>
-              <div>Actions</div>
+              <div>Əməliyyatlar</div>
             </div>
 
-            {branchTables.map((table) => (
-              <div
-                key={table.id}
-                className="grid grid-cols-[1fr_2fr_1fr_1fr] items-center gap-3 border-b px-4 py-3 text-sm last:border-b-0"
-              >
-                <div className="font-medium">{tableLabel(table)}</div>
-                <div className="truncate text-muted-foreground">{tableUrl(restaurant, table)}</div>
-                <div className="capitalize">{table.status}</div>
-                <div className="flex gap-1">
-                  <Button size="icon" variant="ghost" onClick={() => copyLink(table)}>
-                    <LinkIcon className="h-4 w-4" />
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => setActive(table)}>
-                    Edit
-                  </Button>
+            {sortedTables.map((table) => {
+              const status = (table.status as MasaqrTableStatus) || "available";
+              return (
+                <div
+                  key={table.id}
+                  className="grid grid-cols-[1fr_2fr_1fr_1fr] items-center gap-3 border-b px-4 py-3 text-sm last:border-b-0"
+                >
+                  <div className="font-medium">{tableLabel(table)}</div>
+                  <div className="truncate text-muted-foreground">{tableUrl(restaurant, table)}</div>
+                  <div>{STATUS_LABELS[status] ?? status}</div>
+                  <div className="flex gap-1">
+                    <Button size="icon" variant="ghost" onClick={() => copyLink(table)}>
+                      <LinkIcon className="h-4 w-4" />
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setActive(table)}>
+                      Düzəlt
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
-            {branchTables.length === 0 ? (
+            {sortedTables.length === 0 ? (
               <div className="p-8 text-center text-sm text-muted-foreground">
-                No tables yet.
+                Hələ masa yoxdur.
               </div>
             ) : null}
           </Card>
@@ -369,7 +355,7 @@ function TablesPage() {
         {view === "print" ? (
           <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
             <Card className="p-4">
-              <h3 className="font-medium">Print template</h3>
+              <h3 className="font-medium">Çap dizaynı</h3>
               <div className="mt-3 space-y-2">
                 {PRINT_TEMPLATES.map((template) => (
                   <button
@@ -386,20 +372,20 @@ function TablesPage() {
               </div>
               <Button
                 className="mt-4 w-full"
-                onClick={() => toast.info("PDF download will be connected in the PDF export step.")}
+                onClick={() => toast.info("QR PDF export ayrıca mərhələdə tamamlanacaq.")}
               >
                 <Download className="mr-2 h-4 w-4" />
-                Download PDF
+                PDF yüklə
               </Button>
             </Card>
 
             <Card className="p-5">
               <h3 className="font-medium mb-4">
-                Preview · {PRINT_TEMPLATES.find((t) => t.id === printTemplate)?.name}
+                Ön baxış · {PRINT_TEMPLATES.find((template) => template.id === printTemplate)?.name}
               </h3>
               <PrintPreview
                 template={printTemplate}
-                tables={branchTables}
+                tables={sortedTables}
                 restaurant={restaurant}
               />
             </Card>
@@ -410,12 +396,12 @@ function TablesPage() {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add table</DialogTitle>
+            <DialogTitle>Masa əlavə et</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label>Table number</Label>
+              <Label>Masa nömrəsi</Label>
               <Input
                 value={draft.table_number}
                 onChange={(event) =>
@@ -426,13 +412,13 @@ function TablesPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label>Table name</Label>
+              <Label>Masa adı</Label>
               <Input
                 value={draft.table_name}
                 onChange={(event) =>
                   setDraft((current) => ({ ...current, table_name: event.target.value }))
                 }
-                placeholder="Table 1"
+                placeholder="Masa 1"
               />
             </div>
 
@@ -448,20 +434,20 @@ function TablesPage() {
                 }
                 className="h-10 w-full rounded-md border bg-background px-3 text-sm"
               >
-                <option value="available">Available</option>
-                <option value="occupied">Occupied</option>
-                <option value="reserved">Reserved</option>
-                <option value="disabled">Disabled</option>
+                <option value="available">Boş</option>
+                <option value="occupied">Dolu</option>
+                <option value="reserved">Rezerv</option>
+                <option value="disabled">Deaktiv</option>
               </select>
             </div>
           </div>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>
-              Cancel
+              Bağla
             </Button>
             <Button disabled={creating} onClick={createTable}>
-              {creating ? "Adding..." : "Add table"}
+              {creating ? "Əlavə olunur..." : "Masa əlavə et"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -476,14 +462,14 @@ function TablesPage() {
           onDelete={async (id) => {
             const ok = await deleteTable(id);
             if (ok) {
-              toast.success("Table removed");
+              toast.success("Masa silindi");
               setActive(null);
             }
           }}
           onSave={async (tableId, patch) => {
             const ok = await updateTable(tableId, patch);
             if (ok) {
-              toast.success("Table saved");
+              toast.success("Masa yadda saxlandı");
               setActive(null);
             }
           }}
@@ -507,7 +493,7 @@ function PrintPreview({
   if (!tables.length) {
     return (
       <div className="rounded-2xl border border-dashed p-8 text-center text-sm text-muted-foreground">
-        No tables to preview.
+        Çap üçün masa yoxdur.
       </div>
     );
   }
@@ -515,13 +501,13 @@ function PrintPreview({
   if (template === "tent") {
     return (
       <div className="mx-auto w-[360px] rounded-3xl border-2 border-dashed p-6 text-center">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">Scan to order</p>
+        <p className="text-xs uppercase tracking-wide text-muted-foreground">Sifariş üçün skan edin</p>
         <h3 className="mt-1 text-2xl font-semibold">{restaurant?.name}</h3>
         <div className="my-5 flex justify-center">
           <QRPattern value={tableUrl(restaurant, first)} size={180} />
         </div>
         <p className="font-medium">{tableLabel(first)}</p>
-        <p className="mt-1 text-xs text-muted-foreground">No app · Just scan</p>
+        <p className="mt-1 text-xs text-muted-foreground">Tətbiq lazım deyil · sadəcə skan edin</p>
       </div>
     );
   }
@@ -541,7 +527,7 @@ function PrintPreview({
     return (
       <div className="mx-auto w-[360px] overflow-hidden rounded-3xl border bg-card">
         {restaurant?.cover_url ? (
-          <img src={restaurant.cover_url} className="h-28 w-full object-cover" />
+          <img src={restaurant.cover_url} className="h-28 w-full object-cover" alt="" />
         ) : (
           <div className="h-28 bg-gradient-to-br from-ember/20 to-sage/20" />
         )}
@@ -599,7 +585,7 @@ function TableDialog({
 
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label>Table number</Label>
+            <Label>Masa nömrəsi</Label>
             <Input
               value={draft.table_number}
               onChange={(event) =>
@@ -609,7 +595,7 @@ function TableDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label>Table name</Label>
+            <Label>Masa adı</Label>
             <Input
               value={draft.table_name}
               onChange={(event) =>
@@ -620,12 +606,12 @@ function TableDialog({
 
           <div className="rounded-xl border bg-muted/30 p-3">
             <div className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
-              Customer link
+              Müştəri linki
             </div>
             <div className="break-all text-sm">{tableUrl(restaurant, table)}</div>
             <Button className="mt-3" variant="outline" size="sm" onClick={() => onCopy(table)}>
               <LinkIcon className="mr-2 h-4 w-4" />
-              Copy link
+              Linki kopyala
             </Button>
           </div>
 
@@ -637,11 +623,11 @@ function TableDialog({
                   <button
                     key={status}
                     onClick={() => setDraft((current) => ({ ...current, status }))}
-                    className={`text-xs px-2 py-1 rounded border capitalize ${
+                    className={`text-xs px-2 py-1 rounded border ${
                       draft.status === status ? STATUS_STYLES[status] : "bg-card"
                     }`}
                   >
-                    {status}
+                    {STATUS_LABELS[status]}
                   </button>
                 )
               )}
@@ -652,7 +638,7 @@ function TableDialog({
         <DialogFooter className="gap-2 sm:gap-0">
           <Button variant="destructive" onClick={() => onDelete(table.id)}>
             <Trash2 className="mr-2 h-4 w-4" />
-            Delete
+            Sil
           </Button>
           <Button
             variant="outline"
@@ -663,7 +649,7 @@ function TableDialog({
             }
           >
             <RefreshCw className="mr-2 h-4 w-4" />
-            Regenerate QR
+            QR yenilə
           </Button>
           <Button
             onClick={() =>
@@ -674,7 +660,7 @@ function TableDialog({
               })
             }
           >
-            Save
+            Yadda saxla
           </Button>
         </DialogFooter>
       </DialogContent>

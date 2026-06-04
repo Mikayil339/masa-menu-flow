@@ -14,11 +14,11 @@ import { useEffect, useState } from "react";
 import { Copy, Plus, RefreshCcw, UserRound, X } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
-import { fetchOwnerContext, type BranchRow, type Profile } from "@/lib/masaqr";
+import { fetchOwnerContext, type Profile } from "@/lib/masaqr";
 
 export const Route = createFileRoute("/app/staff")({
   head: () => ({
-    meta: [{ title: "Staff — MasaQR" }],
+    meta: [{ title: "Ofisiantlar — MasaQR" }],
   }),
   component: StaffPage,
 });
@@ -26,9 +26,8 @@ export const Route = createFileRoute("/app/staff")({
 type StaffInvite = {
   id: string;
   restaurant_id: string;
-  branch_id: string | null;
   code: string;
-  role: "waiter" | "kitchen" | "staff";
+  role: "waiter";
   status: "active" | "used" | "expired";
   created_by: string;
   used_by: string | null;
@@ -36,14 +35,25 @@ type StaffInvite = {
   created_at: string;
 };
 
+function getRoleLabel(role?: string | null) {
+  if (role === "waiter") return "Ofisiant";
+  if (role === "manager" || role === "owner") return "Menecer";
+  return "İşçi";
+}
+
+function getStatusLabel(status?: string | null) {
+  if (status === "active") return "Aktiv";
+  if (status === "inactive") return "Deaktiv";
+  if (status === "used") return "İstifadə olunub";
+  if (status === "expired") return "Müddəti bitib";
+  return status || "Naməlum";
+}
+
 function StaffPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [branches, setBranches] = useState<BranchRow[]>([]);
   const [staff, setStaff] = useState<Profile[]>([]);
   const [invites, setInvites] = useState<StaffInvite[]>([]);
   const [open, setOpen] = useState(false);
-  const [role, setRole] = useState<"waiter" | "kitchen" | "staff">("waiter");
-  const [branchId, setBranchId] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
 
@@ -52,7 +62,6 @@ function StaffPage() {
       const ctx = await fetchOwnerContext();
 
       setProfile(ctx.profile);
-      setBranches(ctx.branches);
 
       if (!ctx.profile?.restaurant_id) {
         setStaff([]);
@@ -65,9 +74,9 @@ function StaffPage() {
       const [staffResult, invitesResult] = await Promise.all([
         supabase
           .from("masaqr_users")
-          .select("id,email,full_name,role,restaurant_id,branch_id,status,created_at")
+          .select("id,email,full_name,role,restaurant_id,status,created_at")
           .eq("restaurant_id", restaurantId)
-          .neq("role", "owner")
+          .in("role", ["waiter", "manager"])
           .order("created_at", { ascending: false }),
 
         supabase
@@ -80,14 +89,32 @@ function StaffPage() {
       if (staffResult.error) throw staffResult.error;
       if (invitesResult.error) throw invitesResult.error;
 
-      setStaff((staffResult.data ?? []) as Profile[]);
-      setInvites((invitesResult.data ?? []) as StaffInvite[]);
+      const staffRows: Profile[] = (staffResult.data ?? []).map((row: any) => ({
+        id: String(row.id),
+        restaurant_id: row.restaurant_id ?? null,
+        email: row.email ?? null,
+        full_name: row.full_name ?? null,
+        role: "waiter" as const,
+        branch_id: null,
+        status: row.status ?? null,
+      }));
 
-      if (!branchId && ctx.branches[0]?.id) {
-        setBranchId(ctx.branches[0].id);
-      }
+      const inviteRows: StaffInvite[] = (invitesResult.data ?? []).map((row: any) => ({
+        id: String(row.id),
+        restaurant_id: String(row.restaurant_id),
+        code: String(row.code),
+        role: "waiter" as const,
+        status: row.status ?? "active",
+        created_by: String(row.created_by ?? ""),
+        used_by: row.used_by ?? null,
+        expires_at: row.expires_at ?? null,
+        created_at: row.created_at ?? new Date().toISOString(),
+      }));
+
+      setStaff(staffRows);
+      setInvites(inviteRows);
     } catch (error: any) {
-      toast.error(error.message ?? "Could not load staff");
+      toast.error(error.message ?? "Ofisiant məlumatları yüklənmədi");
     } finally {
       setLoading(false);
     }
@@ -121,7 +148,7 @@ function StaffPage() {
 
   async function createInvite() {
     if (!profile?.restaurant_id || !profile.id) {
-      toast.error("Restaurant profile not found");
+      toast.error("Restoran profili tapılmadı");
       return;
     }
 
@@ -132,9 +159,8 @@ function StaffPage() {
 
       const { error } = await supabase.from("masaqr_staff_invites").insert({
         restaurant_id: profile.restaurant_id,
-        branch_id: branchId || null,
         code,
-        role,
+        role: "waiter",
         status: "active",
         created_by: profile.id,
         expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
@@ -142,11 +168,11 @@ function StaffPage() {
 
       if (error) throw error;
 
-      toast.success(`Invite created: ${code}`);
+      toast.success(`Dəvət kodu yaradıldı: ${code}`);
       setOpen(false);
       await loadStaff();
     } catch (error: any) {
-      toast.error(error.message ?? "Could not create invite");
+      toast.error(error.message ?? "Dəvət kodu yaradıla bilmədi");
     } finally {
       setCreating(false);
     }
@@ -163,7 +189,7 @@ function StaffPage() {
       return;
     }
 
-    toast.success("Invite cancelled");
+    toast.success("Dəvət ləğv edildi");
     await loadStaff();
   }
 
@@ -178,7 +204,7 @@ function StaffPage() {
       return;
     }
 
-    toast.success("Staff member deactivated");
+    toast.success("İstifadəçi deaktiv edildi");
     await loadStaff();
   }
 
@@ -186,19 +212,19 @@ function StaffPage() {
   const inactiveInvites = invites.filter((invite) => invite.status !== "active");
 
   if (loading) {
-    return <div className="p-6 text-sm text-muted-foreground">Loading staff…</div>;
+    return <div className="p-6 text-sm text-muted-foreground">Ofisiantlar yüklənir…</div>;
   }
 
   if (!profile?.restaurant_id) {
     return (
       <div>
         <PageHeader
-          title="Staff"
-          subtitle="Complete restaurant setup before inviting staff."
+          title="Ofisiantlar"
+          subtitle="Ofisiant dəvət etmək üçün əvvəl restoran qurulumunu tamamlayın."
         />
         <div className="p-6">
           <Card className="p-6 text-sm text-muted-foreground">
-            No restaurant is connected to this account.
+            Bu hesaba restoran qoşulmayıb.
           </Card>
         </div>
       </div>
@@ -208,15 +234,15 @@ function StaffPage() {
   return (
     <div>
       <PageHeader
-        title="Staff"
-        subtitle="Manage real staff profiles and Supabase invite codes."
+        title="Ofisiantlar"
+        subtitle="Komandanı real Supabase dəvət kodları ilə idarə edin."
         actions={
           <Button
             onClick={() => setOpen(true)}
             className="bg-ember hover:bg-ember/90 text-ember-foreground"
           >
             <Plus className="mr-2 h-4 w-4" />
-            Invite staff
+            Ofisiant dəvət et
           </Button>
         }
       />
@@ -225,14 +251,14 @@ function StaffPage() {
         <Card className="p-5">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-semibold">Team ({staff.length})</h2>
+              <h2 className="text-lg font-semibold">Komanda ({staff.length})</h2>
               <p className="text-sm text-muted-foreground">
-                Real staff rows from masaqr_users.
+                Restorana bağlı real istifadəçi profilləri.
               </p>
             </div>
             <Button variant="outline" size="sm" onClick={loadStaff}>
               <RefreshCcw className="mr-2 h-4 w-4" />
-              Refresh
+              Yenilə
             </Button>
           </div>
 
@@ -249,18 +275,18 @@ function StaffPage() {
 
                   <div>
                     <p className="font-medium">
-                      {member.full_name || member.email || "Staff member"}
+                      {member.full_name || member.email || "Komanda üzvü"}
                     </p>
                     <p className="text-sm text-muted-foreground">{member.email}</p>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <span className="rounded-full border px-3 py-1 text-xs capitalize">
-                    {member.role}
+                  <span className="rounded-full border px-3 py-1 text-xs">
+                    {getRoleLabel(member.role)}
                   </span>
-                  <span className="rounded-full border px-3 py-1 text-xs capitalize">
-                    {member.status}
+                  <span className="rounded-full border px-3 py-1 text-xs">
+                    {getStatusLabel(member.status)}
                   </span>
                   {member.status !== "inactive" ? (
                     <Button
@@ -277,7 +303,7 @@ function StaffPage() {
 
             {staff.length === 0 ? (
               <div className="rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-                No staff profiles yet. Create an invite code and let staff join.
+                Hələ ofisiant profili yoxdur. Dəvət kodu yaradın və ofisiant qoşulsun.
               </div>
             ) : null}
           </div>
@@ -285,10 +311,10 @@ function StaffPage() {
 
         <Card className="p-5">
           <h2 className="text-lg font-semibold">
-            Active invites ({activeInvites.length})
+            Aktiv dəvətlər ({activeInvites.length})
           </h2>
           <p className="mb-4 text-sm text-muted-foreground">
-            Real invite codes from masaqr_staff_invites.
+            Dəvət kodları Supabase-də real saxlanılır.
           </p>
 
           <div className="space-y-3">
@@ -299,12 +325,12 @@ function StaffPage() {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="font-medium capitalize">{invite.role}</p>
+                    <p className="font-medium">Ofisiant</p>
                     <p className="text-xs text-muted-foreground">
-                      Expires:{" "}
+                      Bitmə tarixi:{" "}
                       {invite.expires_at
                         ? new Date(invite.expires_at).toLocaleDateString()
-                        : "No expiry"}
+                        : "Limitsiz"}
                     </p>
                   </div>
 
@@ -320,7 +346,7 @@ function StaffPage() {
                 <button
                   onClick={() => {
                     navigator.clipboard.writeText(invite.code);
-                    toast.success("Invite code copied");
+                    toast.success("Dəvət kodu kopyalandı");
                   }}
                   className="mt-3 flex w-full items-center justify-between rounded-xl border bg-background px-3 py-2 font-mono text-sm hover:bg-muted"
                 >
@@ -332,7 +358,7 @@ function StaffPage() {
 
             {activeInvites.length === 0 ? (
               <div className="rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-                No active invites.
+                Aktiv dəvət yoxdur.
               </div>
             ) : null}
           </div>
@@ -340,7 +366,7 @@ function StaffPage() {
           {inactiveInvites.length > 0 ? (
             <div className="mt-6">
               <h3 className="mb-3 text-sm font-medium text-muted-foreground">
-                Previous invites
+                Əvvəlki dəvətlər
               </h3>
 
               <div className="space-y-2">
@@ -350,8 +376,8 @@ function StaffPage() {
                     className="flex items-center justify-between border-b pb-2 text-sm"
                   >
                     <span className="font-mono">{invite.code}</span>
-                    <span className="capitalize text-muted-foreground">
-                      {invite.status}
+                    <span className="text-muted-foreground">
+                      {getStatusLabel(invite.status)}
                     </span>
                   </div>
                 ))}
@@ -364,53 +390,28 @@ function StaffPage() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Invite staff</DialogTitle>
+            <DialogTitle>Ofisiant dəvət et</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label>Role</Label>
-              <select
-                value={role}
-                onChange={(event) =>
-                  setRole(event.target.value as "waiter" | "kitchen" | "staff")
-                }
-                className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-              >
-                <option value="waiter">Waiter</option>
-                <option value="kitchen">Kitchen</option>
-                <option value="staff">Staff</option>
-              </select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Branch</Label>
-              <select
-                value={branchId}
-                onChange={(event) => setBranchId(event.target.value)}
-                className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-              >
-                <option value="">All branches</option>
-                {branches.map((branch) => (
-                  <option key={branch.id} value={branch.id}>
-                    {branch.name}
-                  </option>
-                ))}
-              </select>
+              <Label>Vəzifə</Label>
+              <div className="h-10 w-full rounded-md border bg-muted px-3 py-2 text-sm">
+                Ofisiant
+              </div>
             </div>
 
             <p className="text-xs text-muted-foreground">
-              This creates a real invite code in Supabase. Staff can use it on the
-              join page.
+              Bu əməliyyat Supabase-də real dəvət kodu yaradır. Ofisiant həmin kodla qoşulma səhifəsindən qeydiyyatdan keçə bilər.
             </p>
           </div>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>
-              Cancel
+              Bağla
             </Button>
             <Button disabled={creating} onClick={createInvite}>
-              {creating ? "Creating..." : "Create invite"}
+              {creating ? "Yaradılır..." : "Dəvət yarat"}
             </Button>
           </DialogFooter>
         </DialogContent>

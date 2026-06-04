@@ -28,54 +28,46 @@ const nav: NavItem[] = [
 export function AppShell({ children }: { children: ReactNode }) {
   const loc = useLocation();
   const nav2 = useNavigate();
-  const { auth, restaurant, branches, activeBranchId, setActiveBranch, alerts, plan, logout } = useStore();
-  const role: Role = auth.role ?? "owner";
+  const { auth, restaurant, alerts, plan, logout } = useStore();
+  // Treat legacy "owner" as manager. Only manager + waiter exist as UI roles.
+  const rawRole: Role = auth.role ?? "manager";
+  const role: Role = rawRole === "owner" ? "manager" : rawRole;
   const openAlerts = alerts.filter(a => !a.resolved).length;
   const trialDays = Math.max(0, Math.ceil((plan.trialEndsAt - Date.now()) / 86400000));
 
-  // Role gate — kitchen/waiter can never see admin shell
-  if (role === "kitchen" || role === "waiter") {
-    const goTo = role === "kitchen" ? "/kitchen" : "/waiter";
+  // Waiter (and any legacy kitchen/staff) never see the admin shell
+  if (role === "waiter" || rawRole === "kitchen" || rawRole === "staff") {
     return (
       <div className="min-h-screen grid place-items-center p-6 bg-background">
         <div className="max-w-md text-center">
           <div className="mx-auto h-14 w-14 rounded-full bg-warning/10 text-warning grid place-items-center"><Lock className="h-6 w-6" /></div>
-          <h1 className="font-display text-2xl mt-4">You don't have permission to view this area</h1>
+          <h1 className="font-display text-2xl mt-4">Bu bölməyə icazəniz yoxdur</h1>
           <p className="text-sm text-muted-foreground mt-2">
-            Your account is set up as <b>{role}</b>. The restaurant admin dashboard is only available to owners and managers. Head back to your workspace.
+            Hesabınız <b>{T.roles.waiter}</b> kimi qurulub. Menecer paneli yalnız menecerlər üçündür.
           </p>
           <div className="mt-6 flex flex-wrap gap-2 justify-center">
-            <Button onClick={() => nav2({ to: goTo })} className="bg-ember hover:bg-ember/90 text-ember-foreground">
-              <ArrowLeft className="h-4 w-4 mr-1.5" /> Back to {role} workspace
+            <Button onClick={() => nav2({ to: "/waiter" })} className="bg-ember hover:bg-ember/90 text-ember-foreground">
+              <ArrowLeft className="h-4 w-4 mr-1.5" /> {T.nav.waiterView}
             </Button>
-            <Button variant="outline" onClick={() => { supabase.auth.signOut(); logout(); nav2({ to: "/login" }); }}>Sign out</Button>
+            <Button variant="outline" onClick={() => { supabase.auth.signOut(); logout(); nav2({ to: "/login" }); }}>{T.nav.signOut}</Button>
           </div>
         </div>
       </div>
     );
   }
 
-  const visibleNav = nav.filter(n => n.allow.includes(role));
+  const visibleNav = nav.filter(n => n.allow.includes(rawRole) || n.allow.includes(role));
 
   return (
     <div className="flex min-h-screen bg-background">
       <aside className="hidden md:flex w-64 flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
         <div className="p-5 border-b border-sidebar-border">
           <Logo className="text-sidebar-foreground" />
-          <div className="mt-4 text-xs uppercase tracking-wider text-sidebar-foreground/60">Restaurant</div>
+          <div className="mt-4 text-xs uppercase tracking-wider text-sidebar-foreground/60">{T.nav.restaurant}</div>
           <div className="text-sm font-medium truncate flex items-center gap-2">
             {restaurant.logo && <img src={restaurant.logo} alt="" className="h-5 w-5 rounded-full object-cover" />}
             {restaurant.name}
           </div>
-          <select
-            className="mt-2 w-full text-xs bg-sidebar-accent border border-sidebar-border rounded-md px-2 py-1.5 text-sidebar-accent-foreground"
-            value={activeBranchId}
-            onChange={e => setActiveBranch(e.target.value)}
-          >
-            {branches.filter(b => b.active).map(b => (
-              <option key={b.id} value={b.id}>{b.name}</option>
-            ))}
-          </select>
         </div>
         <nav className="flex-1 overflow-y-auto p-3 space-y-1">
           {visibleNav.map(n => {
@@ -106,12 +98,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Link>
           <div className="pt-2 mt-2 border-t border-sidebar-border">
             <div className="text-[10px] uppercase text-sidebar-foreground/50">Plan</div>
-            <div className="text-xs">{plan.tier === "trial" ? `Trial · ${trialDays}d left` : plan.tier}</div>
+            <div className="text-xs">{plan.tier === "trial" ? `Sınaq · ${trialDays} gün qalıb` : plan.tier}</div>
             <div className="text-[10px] uppercase text-sidebar-foreground/50 mt-2">{T.nav.role}</div>
-            <div className="text-xs capitalize">{T.roles.manager}</div>
+            <div className="text-xs">{T.roles.manager}</div>
           </div>
           <button onClick={() => { supabase.auth.signOut(); logout(); nav2({ to: "/login" }); }} className="flex items-center gap-2 text-xs text-sidebar-foreground/70 hover:text-sidebar-foreground">
-            <LogOut className="h-3.5 w-3.5" /> Sign out · {auth.email}
+            <LogOut className="h-3.5 w-3.5" /> {T.nav.signOut} · {auth.email}
           </button>
         </div>
       </aside>
@@ -119,7 +111,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <main className="flex-1 min-w-0">
         <div className="md:hidden flex items-center justify-between p-4 bg-sidebar text-sidebar-foreground">
           <Logo className="text-sidebar-foreground" />
-          <Button asChild size="sm" variant="secondary"><Link to="/app">Menu</Link></Button>
+          <Button asChild size="sm" variant="secondary"><Link to="/app">{T.nav.panel}</Link></Button>
         </div>
         {children}
       </main>

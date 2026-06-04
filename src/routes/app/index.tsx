@@ -262,13 +262,10 @@ function Dashboard() {
   subtitle={restaurant ? `${restaurant.name} live overview` : "Live overview"}
   actions={
           <div className="flex gap-2">
-            <Button asChild variant="outline">
-              <Link to="/kitchen">Open kitchen</Link>
-            </Button>
             {restaurant ? (
               <Button asChild>
                 <Link to="/m/$slug/$table" params={{ slug: restaurant.slug, table: "1" }}>
-                  View guest menu
+                  Müştəri menyusuna bax
                 </Link>
               </Button>
             ) : null}

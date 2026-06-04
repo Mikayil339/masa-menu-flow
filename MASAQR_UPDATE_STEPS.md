@@ -39,3 +39,24 @@ git push -f origin main
 ```
 
 9. Vercel will redeploy from GitHub. Add these same environment variables in Vercel Project Settings → Environment Variables.
+
+## Faza 2/3/4 — tam icra (icra olunmuş dəyişikliklər)
+
+### Yeni / yenilənmiş səhifələr
+- `src/routes/app/settings.tsx` — **tam yenidən yazıldı**. Real Supabase yazışı: ad, slug, valyuta, əsas dil, müştəri dilləri, qısa təsvir, **loqo yüklə**, **üz şəkli yüklə**, telefon, ünvan, Wi-Fi adı/şifrəsi, menyuda göstər/gizlət açarları, **ofisiant təyinatı rejimi** (first_confirming_waiter / manual_table_ranges / disabled).
+- `src/routes/app/menu.tsx` — məhsul redaktoru artıq **AZ/EN/RU ad və təsvir**, **əsas / yerli / əcnəbi qiymət**, **tövsiyə olunan məhsullar** seçimi, kompüterdən şəkil yükləmə. Yeni kateqoriya da 3 dildə.
+- `src/routes/app/orders.tsx` — yeni **Sessiyalar** görünüşü: açıq sessiyalar siyahısı, hesab-stilində detal, **Bağla** düyməsi `closeSession` çağırır və masanı boşaldır.
+
+### Tələb olunan Supabase Storage bucket-ları
+Aşağıdakı bucket-lar mövcud olmalıdır (yoxdursa Supabase Dashboard → Storage-də yaradın, hamısı **public**):
+- `masaqr-logos`
+- `masaqr-covers`
+- `masaqr-menu-images`
+
+Bucket-lar yaradıldıqdan sonra hər birinə bu RLS policy-lərini əlavə edin:
+```sql
+-- Anon və auth oxuya bilsin (public bucket)
+CREATE POLICY "public read" ON storage.objects FOR SELECT USING (bucket_id IN ('masaqr-logos','masaqr-covers','masaqr-menu-images'));
+-- Auth istifadəçilər yükləyə bilsin
+CREATE POLICY "auth upload" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id IN ('masaqr-logos','masaqr-covers','masaqr-menu-images'));
+```
