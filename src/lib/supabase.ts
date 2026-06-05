@@ -32,6 +32,5 @@ export type MasaQrProfile = {
   full_name: string | null;
   role: "owner" | "waiter" | "kitchen" | "staff" | string;
   restaurant_id: string | null;
-  branch_id: string | null;
   status: string | null;
 };

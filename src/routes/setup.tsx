@@ -22,8 +22,8 @@ function Setup() {
   const [r, setR] = useState({ name: restaurant.name, slug: restaurant.slug, currency: restaurant.currency, mode: restaurant.serviceMode });
   const [langs, setLangs] = useState<string[]>(["az", "en", "ru"]);
   const [tables, setTables] = useState(12);
-  const [invites, setInvites] = useState<{ email: string; role: "manager" | "kitchen" | "waiter" }[]>([
-    { email: "", role: "kitchen" },
+  const [invites, setInvites] = useState<{ email: string; role: "manager" | "waiter" }[]>([
+    { email: "", role: "waiter" },
   ]);
 
   const next = () => setStep(s => Math.min(s + 1, steps.length - 1));
@@ -111,7 +111,7 @@ function Setup() {
                 <div key={i} className="grid grid-cols-[1fr_140px] gap-2">
                   <Input placeholder="staff@restaurant.com" value={inv.email} onChange={e => setInvites(arr => arr.map((x, idx) => idx === i ? { ...x, email: e.target.value } : x))} />
                   <select value={inv.role} onChange={e => setInvites(arr => arr.map((x, idx) => idx === i ? { ...x, role: e.target.value as any } : x))} className="h-10 rounded-md border bg-card px-3 text-sm">
-                    <option value="manager">Manager</option><option value="kitchen">Kitchen</option><option value="waiter">Waiter</option>
+                    <option value="manager">Menecer</option><option value="waiter">Ofisiant</option>
                   </select>
                 </div>
               ))}
@@ -123,7 +123,7 @@ function Setup() {
             <div className="mt-8 text-center">
               <div className="mx-auto h-16 w-16 rounded-full bg-sage/15 text-sage grid place-items-center"><Check className="h-8 w-8" /></div>
               <p className="mt-4 font-display text-2xl">You're ready to go.</p>
-              <p className="text-sm text-muted-foreground mt-2">Your kitchen is live. Print your QRs from QR & Tables when you're ready.</p>
+              <p className="text-sm text-muted-foreground mt-2">Your restaurant workspace is ready. Print your QRs from QR & Tables when you're ready.</p>
             </div>
           )}
 
@@ -132,7 +132,7 @@ function Setup() {
             {step < steps.length - 1 ? (
               <Button onClick={() => {
                 if (step === 0) setRestaurant({ name: r.name, slug: r.slug, currency: r.currency, serviceMode: r.mode as any });
-                if (step === 4) invites.filter(i => i.email).forEach(i => inviteStaff(i.email, i.role, ["br1"]));
+                if (step === 4) invites.filter(i => i.email).forEach(i => inviteStaff(i.email, i.role));
                 next();
               }} className="bg-ember hover:bg-ember/90 text-ember-foreground">
                 Continue <ChevronRight className="ml-1 h-4 w-4" />

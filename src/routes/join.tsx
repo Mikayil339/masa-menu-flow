@@ -36,7 +36,7 @@ function JoinPage() {
 
       const { data: invite, error: inviteError } = await supabase
         .from("masaqr_staff_invites")
-        .select("id,restaurant_id,branch_id,code,role,status,expires_at")
+        .select("id,restaurant_id,code,role,status,expires_at")
         .eq("code", inviteCode)
         .eq("status", "active")
         .maybeSingle();
@@ -94,7 +94,6 @@ function JoinPage() {
         full_name: cleanName,
         role,
         restaurant_id: invite.restaurant_id,
-        branch_id: invite.branch_id,
         status: "active",
       });
 
@@ -111,7 +110,6 @@ function JoinPage() {
         email: cleanEmail,
         role,
         name: cleanName,
-        branchId: invite.branch_id ?? null,
       });
 
       toast.success(`Xoş gəlmisiniz, ${cleanName}`);

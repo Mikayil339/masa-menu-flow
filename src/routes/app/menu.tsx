@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useEffect, useMemo, useState } from "react";
-import { Edit2, ImagePlus, Plus, Search, UploadCloud } from "lucide-react";
+import { Edit2, ImagePlus, Plus, Search, Trash2, UploadCloud } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { fetchMenu, fetchOwnerContext, localName, money, type CategoryRow, type MenuItemRow, type Profile, type RestaurantRow } from "@/lib/masaqr";
@@ -65,6 +65,45 @@ function MenuBuilder() {
     load();
   }
 
+
+  async function deleteCategory(category: CategoryRow) {
+    const itemCount = items.filter((item) => item.category_id === category.id).length;
+    const categoryName = localName(category.name, category.name_i18n, "az") || "kateqoriya";
+    const ok = window.confirm(
+      itemCount > 0
+        ? `"${categoryName}" kateqoriyasını silmək istəyirsiniz? Bu kateqoriyadakı ${itemCount} məhsul da menyudan gizlədiləcək.`
+        : `"${categoryName}" kateqoriyasını silmək istəyirsiniz?`
+    );
+    if (!ok) return;
+
+    const { error: categoryError } = await supabase
+      .from("masaqr_categories")
+      .update({ is_active: false })
+      .eq("id", category.id);
+
+    if (categoryError) {
+      toast.error(categoryError.message);
+      return;
+    }
+
+    if (itemCount > 0) {
+      const { error: itemError } = await supabase
+        .from("masaqr_menu_items")
+        .update({ is_available: false })
+        .eq("category_id", category.id);
+
+      if (itemError) {
+        toast.error(itemError.message);
+        return;
+      }
+    }
+
+    toast.success("Kateqoriya silindi");
+    const nextCategory = categories.find((candidate) => candidate.id !== category.id)?.id;
+    setActiveCat(nextCategory);
+    await load();
+  }
+
   if (loading) return <div className="p-6 text-sm text-muted-foreground">Yüklənir…</div>;
   if (!profile?.restaurant_id) {
     return <div><PageHeader title="Menyu" subtitle="Əvvəlcə restoran quraşdırın." /><div className="p-6"><Card className="p-6 text-sm text-muted-foreground">Restoran tapılmadı.</Card></div></div>;
@@ -92,12 +131,37 @@ function MenuBuilder() {
             <Button variant="outline" size="sm" onClick={() => setNewCatOpen(true)}>Yeni</Button>
           </div>
           <div className="space-y-1">
-            {categories.map(c => (
-              <button key={c.id} onClick={() => setActiveCat(c.id)} className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition hover:bg-muted ${activeCat === c.id ? "bg-ember/10 font-medium text-ember" : ""}`}>
-                <span>{localName(c.name, c.name_i18n, "az")}</span>
-                <span className="text-xs text-muted-foreground">{items.filter(i => i.category_id === c.id).length}</span>
-              </button>
-            ))}
+            {categories.map(c => {
+              const count = items.filter(i => i.category_id === c.id).length;
+              return (
+                <div
+                  key={c.id}
+                  className={`group flex items-center gap-1 rounded-lg transition hover:bg-muted ${activeCat === c.id ? "bg-ember/10 text-ember" : ""}`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setActiveCat(c.id)}
+                    className={`flex min-w-0 flex-1 items-center justify-between rounded-lg px-3 py-2 text-left text-sm ${activeCat === c.id ? "font-medium" : ""}`}
+                  >
+                    <span className="truncate">{localName(c.name, c.name_i18n, "az")}</span>
+                    <span className="ml-2 text-xs text-muted-foreground">{count}</span>
+                  </button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="mr-1 h-8 w-8 opacity-70 hover:text-destructive md:opacity-0 md:group-hover:opacity-100"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      deleteCategory(c);
+                    }}
+                    title="Kateqoriyanı sil"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              );
+            })}
             {categories.length === 0 && <div className="rounded-xl border border-dashed p-4 text-center text-sm text-muted-foreground">Kateqoriya yoxdur.</div>}
           </div>
         </Card>

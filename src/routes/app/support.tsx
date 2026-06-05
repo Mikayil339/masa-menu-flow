@@ -24,7 +24,7 @@ export const Route = createFileRoute("/app/support")({
               <div><Label>Subject</Label><Input value={subj} onChange={e => setSubj(e.target.value)} /></div>
               <div><Label>Issue type</Label>
                 <select value={type} onChange={e => setType(e.target.value)} className="w-full h-10 rounded-md border bg-card px-2 text-sm">
-                  {["PDF export", "QR code", "Kitchen display", "Waiter alert", "Staff invite", "Plan/account", "Other"].map(t => <option key={t}>{t}</option>)}
+                  {["PDF export", "QR code", "Waiter alert", "Staff invite", "Plan/account", "Other"].map(t => <option key={t}>{t}</option>)}
                 </select>
               </div>
               <div><Label>Message</Label><Textarea rows={5} value={msg} onChange={e => setMsg(e.target.value)} /></div>

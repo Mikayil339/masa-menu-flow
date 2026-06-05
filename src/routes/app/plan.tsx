@@ -12,9 +12,9 @@ export const Route = createFileRoute("/app/plan")({
     const { plan, setPlan } = useStore();
     const trialDays = Math.max(0, Math.ceil((plan.trialEndsAt - Date.now()) / 86400000));
     const tiers = [
-      { id: "starter", n: "Starter", p: 29, f: ["1 branch", "12 tables", "Kitchen display"] },
+      { id: "starter", n: "Starter", p: 29, f: ["12 tables", "Ofisiant ekranı", "QR menu"] },
       { id: "pro", n: "Pro", p: 69, best: true, f: ["40 tables", "Modifiers", "Analytics", "Print templates"] },
-      { id: "business", n: "Business", p: 149, f: ["Unlimited", "Multi-branch", "ETA learning"] },
+      { id: "business", n: "Business", p: 149, f: ["Unlimited tables", "Advanced analytics", "Priority support"] },
     ];
     return (
       <div className="p-6 md:p-10">

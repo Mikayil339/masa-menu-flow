@@ -38,7 +38,7 @@ function LoginPage() {
       }
       const { data: profile, error: pErr } = await supabase
         .from("masaqr_users")
-        .select("id,email,full_name,role,restaurant_id,branch_id,status")
+        .select("id,email,full_name,role,restaurant_id,status")
         .eq("id", data.user.id)
         .maybeSingle();
       if (pErr || !profile) {
@@ -53,7 +53,6 @@ function LoginPage() {
         email: profile.email ?? data.user.email ?? email,
         role,
         name: profile.full_name ?? (data.user.email ?? email).split("@")[0],
-        branchId: profile.branch_id ?? null,
       });
       toast.success(T.auth.welcomeBack);
       if (role === "waiter" || role === "kitchen") nav({ to: "/waiter" });

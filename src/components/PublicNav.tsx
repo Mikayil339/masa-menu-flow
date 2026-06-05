@@ -34,7 +34,7 @@ export function PublicFooter() {
       <div className="mx-auto max-w-7xl px-6 py-12 grid gap-8 md:grid-cols-4 text-sm">
         <div>
           <Logo />
-          <p className="mt-3 text-muted-foreground text-xs leading-relaxed">QR menus, kitchen flow & waiter alerts — without the payment headaches.</p>
+          <p className="mt-3 text-muted-foreground text-xs leading-relaxed">QR menus, table sessions & waiter alerts — without payment friction.</p>
         </div>
         <div>
           <div className="font-medium mb-2">Product</div>

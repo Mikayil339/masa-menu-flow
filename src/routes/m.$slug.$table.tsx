@@ -103,7 +103,7 @@ function CustomerMenu() {
       setCategories(menu.categories);
       setItems(menu.items.filter(i => i.is_available && !i.is_sold_out));
       setActiveCat(c => c ?? menu.categories[0]?.id);
-      await supabase.from("masaqr_activity_logs").insert({ restaurant_id: restaurantRow.id, branch_id: (tRow as any)?.branch_id ?? null, table_id: (tRow as any)?.id ?? null, event_type: "menu_view", event_data: { slug, table, lang, customer_type: customerType } }).then(() => {}, () => {});
+      await supabase.from("masaqr_activity_logs").insert({ restaurant_id: restaurantRow.id, table_id: (tRow as any)?.id ?? null, event_type: "menu_view", event_data: { slug, table, lang, customer_type: customerType } }).then(() => {}, () => {});
       await loadOrders(restaurantRow.id);
     } catch (err: any) {
       toast.error(err.message ?? "Could not load menu");
@@ -165,7 +165,6 @@ function CustomerMenu() {
 
       const { data: order, error: orderError } = await supabase.from("masaqr_orders").insert({
         restaurant_id: restaurant.id,
-        branch_id: tableObj.branch_id,
         table_id: tableObj.id,
         customer_session_id: sessionId,
         session_id: session.id,
@@ -198,7 +197,7 @@ function CustomerMenu() {
 
   async function callRequest(type: "waiter" | "water" | "bill") {
     if (!restaurant || !tableObj) return;
-    await supabase.from("masaqr_waiter_requests").insert({ restaurant_id: restaurant.id, branch_id: tableObj.branch_id, table_id: tableObj.id, type, status: "open" });
+    await supabase.from("masaqr_waiter_requests").insert({ restaurant_id: restaurant.id, table_id: tableObj.id, type, status: "open" });
     toast.success(type === "waiter" ? t.waiterOnWay : type === "bill" ? t.billRequested : t.requestSent);
   }
 

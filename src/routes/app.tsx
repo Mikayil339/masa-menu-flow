@@ -16,7 +16,7 @@ function AppGate() {
     let active = true;
     async function load() {
       try {
-        const { session, profile, restaurant, branches } = await fetchOwnerContext();
+        const { session, profile, restaurant } = await fetchOwnerContext();
         if (!session) {
           if (auth.loggedIn) logout();
           nav({ to: "/login", replace: true });
@@ -32,7 +32,6 @@ function AppGate() {
           email: profile.email ?? session.user.email ?? "",
           role: (profile.role as Role) ?? "owner",
           name: profile.full_name ?? (session.user.email ?? "").split("@")[0],
-          branchId: profile.branch_id ?? null,
         });
         if (restaurant) {
           useStore.setState(st => ({
@@ -46,8 +45,6 @@ function AppGate() {
               langs: restaurant.enabled_languages ?? ["az", "en", "ru"],
               currency: restaurant.currency ?? "AZN",
             },
-            branches: branches.map(b => ({ id: b.id, name: b.name, address: b.location ?? "", active: b.is_active })),
-            activeBranchId: profile.branch_id ?? branches[0]?.id ?? st.activeBranchId,
           }));
         } else if (profile.role === "owner") {
           nav({ to: "/setup", replace: true });

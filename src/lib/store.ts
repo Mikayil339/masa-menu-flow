@@ -52,7 +52,6 @@ export type TableStatus =
 export interface Table {
   id: string;
   label: string;
-  branchId: string;
   seats: number;
   status: TableStatus;
   qrEnabled: boolean;
@@ -71,7 +70,6 @@ export interface Order {
   id: string;
   shortCode: string;
   tableId: string;
-  branchId: string;
   status: OrderStatus;
   items: OrderItem[];
   createdAt: number;
@@ -93,13 +91,11 @@ export interface WaiterAlert {
   resolved: boolean;
 }
 
-export interface Branch { id: string; name: string; address: string; active: boolean }
 export interface StaffMember {
   id: string;
   name: string;
   email: string;
   role: Role;
-  branchIds: string[];
   active: boolean;
   lastActive: number;
 }
@@ -107,7 +103,6 @@ export interface Invite {
   id: string;
   email: string;
   role: Role;
-  branchIds: string[];
   code: string;
   expiresAt: number;
   status: "pending" | "accepted" | "cancelled";
@@ -138,7 +133,7 @@ export interface Restaurant {
 export interface Plan {
   tier: "trial" | "starter" | "pro" | "business";
   trialEndsAt: number;
-  limits: { branches: number; tables: number; staff: number };
+  limits: { tables: number; staff: number };
 }
 
 export interface EtaSettings {
@@ -153,7 +148,6 @@ export interface Auth {
   role: Role | null;
   email: string | null;
   name: string | null;
-  branchId: string | null;
   setupComplete: boolean;
 }
 
@@ -171,8 +165,6 @@ interface State {
   restaurant: Restaurant;
   plan: Plan;
   eta: EtaSettings;
-  branches: Branch[];
-  activeBranchId: string;
   categories: Category[];
   items: MenuItem[];
   modifiers: ModifierGroup[];
@@ -187,13 +179,12 @@ interface State {
   scans: number;
 
   // actions
-  login: (profile: { email: string; role: Role; name: string; branchId?: string | null }) => void;
+  login: (profile: { email: string; role: Role; name: string }) => void;
   loginWithGoogle: (role?: Role) => { isNew: boolean; role: Role };
   logout: () => void;
   register: (email: string, name: string, restaurantName: string, slug: string) => void;
   registerWithGoogle: () => void;
   completeSetup: () => void;
-  setActiveBranch: (id: string) => void;
   setCustomerLang: (l: Lang) => void;
 
   upsertCategory: (c: Category) => void;
@@ -214,13 +205,11 @@ interface State {
   callWaiter: (tableId: string, kind: AlertKind) => void;
   resolveAlert: (id: string) => void;
 
-  inviteStaff: (email: string, role: Role, branchIds: string[]) => Invite;
+  inviteStaff: (email: string, role: Role) => Invite;
   acceptInvite: (code: string, name: string) => StaffMember | null;
   removeStaff: (id: string) => void;
   cancelInvite: (id: string) => void;
 
-  addBranch: (name: string, address: string) => void;
-  toggleBranch: (id: string) => void;
 
   setPdf: (p: Partial<PdfSettings>) => void;
   setPlan: (tier: Plan["tier"]) => void;
@@ -238,7 +227,6 @@ const now = () => Date.now();
 
 // ---- Seed data ----
 const seed = () => {
-  const branchId = "br1";
   const cats: Category[] = [
     { id: "c1", order: 1, name: T("Başlanğıclar", "Starters", "Закуски"), description: T("Yüngül başlanğıclar", "Light bites to begin", "Лёгкие закуски") },
     { id: "c2", order: 2, name: T("Əsas Yeməklər", "Mains", "Основные блюда"), description: T("İmza yeməklərimiz", "Our signature dishes", "Наши фирменные блюда") },
@@ -334,12 +322,12 @@ const seed = () => {
   ];
 
   const tables: Table[] = Array.from({ length: 12 }).map((_, i) => ({
-    id: `t${i + 1}`, label: `T${i + 1}`, branchId, seats: 2 + (i % 3) * 2,
+    id: `t${i + 1}`, label: `T${i + 1}`, seats: 2 + (i % 3) * 2,
     status: (["available", "available", "seated", "preparing", "available", "ready"] as TableStatus[])[i % 6],
     qrEnabled: true,
   }));
 
-  return { cats, items, mods: [mod1, mod2], branchId, tables };
+  return { cats, items, mods: [mod1, mod2], tables };
 };
 
 const s = seed();
@@ -347,19 +335,14 @@ const s = seed();
 export const useStore = create<State>()(
   persist(
     (set, get) => ({
-      auth: { loggedIn: false, role: null, email: null, name: null, branchId: null, setupComplete: true },
+      auth: { loggedIn: false, role: null, email: null, name: null, setupComplete: true },
       restaurant: {
         name: "MasaQR", slug: "demo", primaryLang: "en", langs: ["az", "en", "ru"],
         currency: "₼", serviceMode: "hybrid",
         cover: "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1600",
       },
-      plan: { tier: "trial", trialEndsAt: now() + 1000 * 60 * 60 * 24 * 30, limits: { branches: 3, tables: 50, staff: 25 } },
+      plan: { tier: "trial", trialEndsAt: now() + 1000 * 60 * 60 * 24 * 30, limits: { tables: 50, staff: 25 } },
       eta: { defaultPrep: 15, lateThreshold: 25, rushMultiplier: 1.3, learning: true },
-      branches: [
-        { id: "br1", name: "Downtown", address: "12 Nizami St, Baku", active: true },
-        { id: "br2", name: "Seaside", address: "Boulevard 45, Baku", active: true },
-      ],
-      activeBranchId: "br1",
       categories: [],
       items: [],
       modifiers: [],
@@ -373,29 +356,28 @@ export const useStore = create<State>()(
       customerLang: "en",
       scans: 0,
 
-      login: ({ email, role, name, branchId }) => set({
-        auth: { loggedIn: true, role, email, name, branchId: branchId ?? null, setupComplete: true }
+      login: ({ email, role, name }) => set({
+        auth: { loggedIn: true, role, email, name, setupComplete: true }
       }),
       loginWithGoogle: (_role = "owner") => {
         // Mock Google login disabled — Supabase auth required.
         return { isNew: false, role: _role };
       },
-      logout: () => set({ auth: { loggedIn: false, role: null, email: null, name: null, branchId: null, setupComplete: true } }),
+      logout: () => set({ auth: { loggedIn: false, role: null, email: null, name: null, setupComplete: true } }),
       register: (email, name, restaurantName, slug) => {
         set({
-          auth: { loggedIn: true, role: "owner", email, name, branchId: "br1", setupComplete: false },
+          auth: { loggedIn: true, role: "owner", email, name, setupComplete: false },
           restaurant: { ...get().restaurant, name: restaurantName, slug },
           plan: { ...get().plan, tier: "trial", trialEndsAt: now() + 1000 * 60 * 60 * 24 * 30 },
         });
       },
       registerWithGoogle: () => {
         set({
-          auth: { loggedIn: true, role: "owner", email: "owner.google@gmail.com", name: "Aysel Mammadova", branchId: "br1", setupComplete: false },
+          auth: { loggedIn: true, role: "owner", email: "owner.google@gmail.com", name: "Aysel Mammadova", setupComplete: false },
           plan: { ...get().plan, tier: "trial", trialEndsAt: now() + 1000 * 60 * 60 * 24 * 30 },
         });
       },
       completeSetup: () => set(st => ({ auth: { ...st.auth, setupComplete: true } })),
-      setActiveBranch: (id) => set({ activeBranchId: id }),
       setCustomerLang: (l) => set({ customerLang: l }),
 
       upsertCategory: (c) => set(st => {
@@ -430,7 +412,7 @@ export const useStore = create<State>()(
         const id = rid();
         const shortCode = "A" + Math.floor(Math.random() * 900 + 100);
         const order: Order = {
-          id, shortCode, tableId, branchId: get().activeBranchId, status: "new",
+          id, shortCode, tableId, status: "new",
           items, createdAt: now(), language: lang,
         };
         set(st => ({
@@ -478,10 +460,10 @@ export const useStore = create<State>()(
         alerts: st.alerts.map(a => a.id === id ? { ...a, resolved: true } : a),
       })),
 
-      inviteStaff: (email, role, branchIds) => {
+      inviteStaff: (email, role) => {
         const code = Math.random().toString(36).slice(2, 8).toUpperCase();
         const inv: Invite = {
-          id: rid(), email, role, branchIds, code,
+          id: rid(), email, role, code,
           expiresAt: now() + 1000 * 60 * 60 * 24 * 7, status: "pending",
         };
         set(st => ({ invites: [inv, ...st.invites] }));
@@ -492,7 +474,7 @@ export const useStore = create<State>()(
         if (!inv) return null;
         const member: StaffMember = {
           id: rid(), name, email: inv.email, role: inv.role,
-          branchIds: inv.branchIds, active: true, lastActive: now(),
+          active: true, lastActive: now(),
         };
         set(st => ({
           staff: [...st.staff, member],
@@ -505,12 +487,6 @@ export const useStore = create<State>()(
         invites: st.invites.map(i => i.id === id ? { ...i, status: "cancelled" } : i),
       })),
 
-      addBranch: (name, address) => set(st => ({
-        branches: [...st.branches, { id: rid(), name, address, active: true }],
-      })),
-      toggleBranch: (id) => set(st => ({
-        branches: st.branches.map(b => b.id === id ? { ...b, active: !b.active } : b),
-      })),
 
       setPdf: (p) => set(st => ({ pdf: { ...st.pdf, ...p } })),
       setPlan: (tier) => set(st => ({ plan: { ...st.plan, tier } })),

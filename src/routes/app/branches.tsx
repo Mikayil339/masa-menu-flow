@@ -1,29 +1,21 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { PageHeader } from "@/components/AppShell";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { LayoutDashboard, PowerOff } from "lucide-react";
 
 export const Route = createFileRoute("/app/branches")({
-  head: () => ({ meta: [{ title: "Filiallar — MasaQR" }] }),
-  component: BranchesDisabled,
-});
-
-function BranchesDisabled() {
-  return (
-    <div className="min-h-screen grid place-items-center bg-background p-6">
-      <div className="max-w-md text-center">
-        <div className="mx-auto h-14 w-14 rounded-full bg-muted text-muted-foreground grid place-items-center">
-          <PowerOff className="h-6 w-6" />
-        </div>
-        <h1 className="font-display text-2xl mt-4">Bu bölmə deaktiv edilib</h1>
-        <p className="text-sm text-muted-foreground mt-2">
-          Filial idarəetməsi artıq istifadə olunmur. Restoran ayarlarınız vahid iş yerində aparılır.
+  head: () => ({ meta: [{ title: "Filiallar deaktivdir — MasaQR" }] }),
+  component: () => (
+    <div className="p-6 md:p-10">
+      <PageHeader title="Filial sistemi deaktivdir" subtitle="MasaQR artıq filiallarla işləmir. Bütün masalar və sifarişlər birbaşa restorana bağlıdır." />
+      <Card className="p-6 max-w-xl">
+        <p className="text-sm text-muted-foreground">
+          Bu bölmə əvvəlki versiyadan qalıb. İdarəetmə üçün Masalar və QR, Ofisiantlar və Ayarlar bölmələrindən istifadə edin.
         </p>
-        <div className="mt-6">
-          <Button asChild className="bg-ember hover:bg-ember/90 text-ember-foreground">
-            <Link to="/app"><LayoutDashboard className="h-4 w-4 mr-1.5" />Panelə qayıt</Link>
-          </Button>
-        </div>
-      </div>
+        <Button asChild className="mt-4">
+          <Link to="/app/tables">Masalar və QR-a keç</Link>
+        </Button>
+      </Card>
     </div>
-  );
-}
+  ),
+});

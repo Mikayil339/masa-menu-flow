@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import { Loader2, Upload, Wifi, Phone, MapPin, Languages, Users } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { fetchOwnerContext, uploadImage, type Profile, type RestaurantRow, type WaiterAssignmentMode } from "@/lib/masaqr";
-import type { Lang } from "@/lib/store";
+import { useStore, type Lang } from "@/lib/store";
 
 export const Route = createFileRoute("/app/settings")({
   head: () => ({ meta: [{ title: "Ayarlar — MasaQR" }] }),
@@ -43,6 +43,7 @@ function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
+  const setRestaurantState = useStore((state) => state.setRestaurant);
   const logoInput = useRef<HTMLInputElement>(null);
   const coverInput = useRef<HTMLInputElement>(null);
 
@@ -70,7 +71,12 @@ function SettingsPage() {
       const col = kind === "logo" ? "logo_url" : "cover_url";
       const { error } = await supabase.from("masaqr_restaurants").update({ [col]: url }).eq("id", profile.restaurant_id);
       if (error) throw error;
-      setDraft({ ...draft, [col]: url } as SettingsRow);
+      const nextDraft = { ...draft, [col]: url } as SettingsRow;
+      setDraft(nextDraft);
+      setRestaurantState({
+        logo: kind === "logo" ? url : nextDraft.logo_url ?? undefined,
+        cover: kind === "cover" ? url : nextDraft.cover_url ?? undefined,
+      });
       toast.success(kind === "logo" ? "Loqo yeniləndi" : "Üz şəkli yeniləndi");
     } catch (e: any) {
       toast.error(e.message ?? "Yükləmə alınmadı. Storage bucket-ları yoxlayın.");
@@ -102,6 +108,15 @@ function SettingsPage() {
       };
       const { error } = await supabase.from("masaqr_restaurants").update(payload).eq("id", profile.restaurant_id);
       if (error) throw error;
+      setRestaurantState({
+        name: payload.name,
+        slug: payload.slug,
+        currency: payload.currency,
+        primaryLang: payload.default_language as Lang,
+        langs: payload.enabled_languages as Lang[],
+        logo: draft.logo_url ?? undefined,
+        cover: draft.cover_url ?? undefined,
+      });
       toast.success("Ayarlar yadda saxlanıldı");
       await load();
     } catch (e: any) {
