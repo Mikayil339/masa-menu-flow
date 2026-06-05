@@ -1,4 +1,3 @@
-
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { PublicNav, PublicFooter } from "@/components/PublicNav";
 import { Button } from "@/components/ui/button";
@@ -32,16 +31,50 @@ type SupabaseUserForLogin = {
   };
 };
 
+type MasaQrUserProfile = {
+  id: string;
+  email: string | null;
+  full_name: string | null;
+  role: Role | string | null;
+  restaurant_id: string | null;
+  status: string | null;
+};
+
 function normalizeRole(role: unknown): Role {
-  return ((role as Role) ?? "manager") as Role;
+  return ((role as Role) ?? "owner") as Role;
 }
 
-function destinationForRole(role: Role) {
+function destinationForProfile(profile: MasaQrUserProfile) {
+  const role = normalizeRole(profile.role);
+
+  if (!profile.restaurant_id && role !== "waiter" && role !== "kitchen") {
+    return "/setup";
+  }
+
   return role === "waiter" ? "/waiter" : "/app";
 }
 
 function displayNameFromEmail(email: string) {
   return email.split("@")[0] || "MasaQR user";
+}
+
+function getUserDisplayName(user: SupabaseUserForLogin, fallbackEmail: string) {
+  return (
+    user.user_metadata?.full_name ??
+    user.user_metadata?.name ??
+    displayNameFromEmail(fallbackEmail)
+  );
+}
+
+function isOAuthProviderError(message: string) {
+  const lower = message.toLowerCase();
+
+  return (
+    lower.includes("provider") ||
+    lower.includes("oauth") ||
+    lower.includes("google") ||
+    lower.includes("unsupported")
+  );
 }
 
 function LoginPage() {
@@ -54,20 +87,121 @@ function LoginPage() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
 
-  async function finishLoginFromUser(user: SupabaseUserForLogin) {
-    const userEmail = user.email?.toLowerCase();
-    const { data: profiles, error: profileError } = await supabase
+  async function findProfileByAuthUser(user: SupabaseUserForLogin) {
+    const userEmail = user.email?.trim().toLowerCase();
+
+    const { data: profileById, error: idError } = await supabase
       .from("masaqr_users")
       .select("id,email,full_name,role,restaurant_id,status")
-      .or(`id.eq.${user.id},email.eq.${userEmail}`)
-      .limit(1);
-    
-    const profile = profiles?.[0] ?? null;
+      .eq("id", user.id)
+      .maybeSingle();
 
-    if (profileError || !profile) {
+    if (idError) {
+      return { profile: null, error: idError };
+    }
+
+    if (profileById) {
+      return {
+        profile: profileById as MasaQrUserProfile,
+        error: null,
+      };
+    }
+
+    if (!userEmail) {
+      return {
+        profile: null,
+        error: null,
+      };
+    }
+
+    const { data: profileByEmail, error: emailError } = await supabase
+      .from("masaqr_users")
+      .select("id,email,full_name,role,restaurant_id,status")
+      .ilike("email", userEmail)
+      .maybeSingle();
+
+    if (emailError) {
+      return { profile: null, error: emailError };
+    }
+
+    return {
+      profile: (profileByEmail as MasaQrUserProfile | null) ?? null,
+      error: null,
+    };
+  }
+
+  async function createGoogleProfile(user: SupabaseUserForLogin) {
+    const userEmail = user.email?.trim().toLowerCase();
+
+    if (!userEmail) {
+      return {
+        profile: null,
+        errorMessage: "Google hesabından e-poçt məlumatı alınmadı.",
+      };
+    }
+
+    const fullName = getUserDisplayName(user, userEmail);
+
+    const { data: newProfile, error: insertError } = await supabase
+      .from("masaqr_users")
+      .insert({
+        id: user.id,
+        email: userEmail,
+        full_name: fullName,
+        role: "owner",
+        restaurant_id: null,
+        status: "active",
+      })
+      .select("id,email,full_name,role,restaurant_id,status")
+      .maybeSingle();
+
+    if (insertError || !newProfile) {
+      return {
+        profile: null,
+        errorMessage:
+          insertError?.message ??
+          "Google hesabı üçün profil yaradıla bilmədi.",
+      };
+    }
+
+    return {
+      profile: newProfile as MasaQrUserProfile,
+      errorMessage: null,
+    };
+  }
+
+  async function finishLoginFromUser(user: SupabaseUserForLogin) {
+    const userEmail = user.email?.trim().toLowerCase();
+
+    if (!userEmail) {
       await supabase.auth.signOut();
-      toast.error(profileError?.message ?? T.auth.noProfile);
+      toast.error("Bu hesabda e-poçt tapılmadı.");
       return;
+    }
+
+    const { profile: existingProfile, error: profileError } =
+      await findProfileByAuthUser(user);
+
+    if (profileError) {
+      await supabase.auth.signOut();
+      toast.error(profileError.message);
+      return;
+    }
+
+    let profile = existingProfile;
+
+    if (!profile) {
+      const { profile: createdProfile, errorMessage } =
+        await createGoogleProfile(user);
+
+      if (!createdProfile) {
+        await supabase.auth.signOut();
+        toast.error(errorMessage ?? "Profil yaradıla bilmədi.");
+        return;
+      }
+
+      profile = createdProfile;
+      toast.success("Google hesabınız yaradıldı.");
     }
 
     if (profile.status && profile.status !== "active") {
@@ -77,7 +211,7 @@ function LoginPage() {
     }
 
     const role = normalizeRole(profile.role);
-    const finalEmail = profile.email ?? user.email ?? email;
+    const finalEmail = profile.email ?? userEmail;
 
     login({
       email: finalEmail,
@@ -90,7 +224,10 @@ function LoginPage() {
     });
 
     toast.success(T.auth.welcomeBack);
-    nav({ to: destinationForRole(role) as any });
+
+    nav({
+      to: destinationForProfile(profile) as any,
+    });
   }
 
   useEffect(() => {
@@ -131,6 +268,9 @@ function LoginPage() {
       active = false;
       subscription.unsubscribe();
     };
+
+    // finishLoginFromUser intentionally not included to avoid repeated redirects.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleGoogleLogin = async () => {
@@ -154,7 +294,16 @@ function LoginPage() {
       });
 
       if (error) {
-        toast.error(error.message);
+        const message = error.message ?? "";
+
+        if (isOAuthProviderError(message)) {
+          toast.error(
+            "Google login Supabase-də aktiv deyil. Supabase Authentication → Providers → Google bölməsində Enable edin."
+          );
+        } else {
+          toast.error(message || T.auth.signInFailed);
+        }
+
         setGoogleLoading(false);
       }
     } catch (error: any) {
@@ -168,8 +317,10 @@ function LoginPage() {
     setLoading(true);
 
     try {
+      const cleanEmail = email.trim().toLowerCase();
+
       const { data, error } = await supabase.auth.signInWithPassword({
-        email,
+        email: cleanEmail,
         password: pass,
       });
 
