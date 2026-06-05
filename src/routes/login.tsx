@@ -1,3 +1,4 @@
+
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { PublicNav, PublicFooter } from "@/components/PublicNav";
 import { Button } from "@/components/ui/button";
@@ -54,11 +55,14 @@ function LoginPage() {
   const [checkingSession, setCheckingSession] = useState(true);
 
   async function finishLoginFromUser(user: SupabaseUserForLogin) {
-    const { data: profile, error: profileError } = await supabase
+    const userEmail = user.email?.toLowerCase();
+    const { data: profiles, error: profileError } = await supabase
       .from("masaqr_users")
       .select("id,email,full_name,role,restaurant_id,status")
-      .eq("id", user.id)
-      .maybeSingle();
+      .or(`id.eq.${user.id},email.eq.${userEmail}`)
+      .limit(1);
+    
+    const profile = profiles?.[0] ?? null;
 
     if (profileError || !profile) {
       await supabase.auth.signOut();
@@ -127,9 +131,6 @@ function LoginPage() {
       active = false;
       subscription.unsubscribe();
     };
-
-    // finishLoginFromUser intentionally not included to avoid repeated redirects.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleGoogleLogin = async () => {
